@@ -3,7 +3,7 @@ import math
 import numpy as np
 import scipy as sp
 from matplotlib import pyplot as plt
-
+from pre_cond import DiagFFTPC
 
 class Optimal_Control_Wave_Equation:
 
@@ -34,7 +34,7 @@ class Optimal_Control_Wave_Equation:
               self.v, self.w = fd.split(self.TestFunction) # test function
               self.CG1 = fd.FunctionSpace(self.mesh, 'CG', 2)
 
-
+       # Try to use this function to check with the bugs.
        def f_1d(self, x, i, gamma):
               return -1/gamma * fd.sin(fd.pi * x) * (fd.exp(i * self.dtc))
 
