@@ -2,6 +2,9 @@ import firedrake as fd
 import math
 import numpy as np
 import scipy as sp
+import cmath
+from scipy.fft import fft, ifft
+from firedrake.petsc import PETSc
 from matplotlib import pyplot as plt
 from pre_cond import DiagFFTPC
 
@@ -134,7 +137,7 @@ class Optimal_Control_Wave_Equation:
               self.S_p = S_p
 
 
-       def solve(self):
+       def solve(self, parameters=None):
               self.Build_f()
               self.Build_g()
               self.Build_Initial_Condition()
@@ -145,8 +148,10 @@ class Optimal_Control_Wave_Equation:
               du = fd.Function(self.FunctionSpace)
               M = fd.derivative(self.S, self.U)
               #print(fd.assemble(M).dat.data[:])
-
-              params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
+              if parameters:
+                     params = parameters
+              else:
+                     params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
               prob_u = fd.NonlinearVariationalProblem(M, self.U, bcs=bcs)
               solv_u = fd.NonlinearVariationalSolver(prob_u, solver_parameters=params)
 
@@ -220,13 +225,143 @@ class Optimal_Control_Wave_Equation:
                      sol_file.write(u_out, p_out, g_out)
                      ana_file.write(u_ana, p_ana)
 
-
+# the control test problem
 T = 2
-N_t = 128
+N_t = 64
 N_x = 128
 dim = 1
 gamma = 1e-1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
 
 equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
-u_sol, p_sol = equ.solve()
+
+
+# solver parameters for parallel method
+parameters = {
+       #'snes': snes_sparameters, #TODO: is this needed?
+       'mat_type': 'matfree',
+       'ksp_type': 'gmres',
+       'ksp': {
+       'monitor': None,
+       'converged_reason': None,
+       },
+       'pc_type': 'python',
+       'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
+}
+
+# setup variables that we wish to use in the pc class.
+V = equ.FunctionSpace
+W = equ.MixedSpace # W = V*V
+vu = equ.v # test function space for u
+vp = equ.w # test function space for p
+dtc = equ.dtc
+
+
+
+
+
+
+# here we define the preconditioner class, it is kept in the same file.
+class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
+
+       def __init__(self):
+              self.initialized = False
+              #self.control = control_problem # must be a Control_Wave_Direct problem
+
+
+       def setUp(self, pc):#TODO: do we need this?
+              if not self.initialized:
+                     self.initialize(pc)
+              self.update(pc)
+
+
+       def initialize(self, pc):
+              self.xf = fd.Cofunction(W.dual()) # copy the code back.
+              self.yf = fd.Function(W)
+              self.w = fd.Function(W)
+              self.f = fd.Function(W)
+
+              # eigenvalues for Gamma 1&2
+              self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/N_t * np.arange(N_t)) + np.exp(4j*np.pi/N_t * np.arange(N_t))
+              self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
+              self.S1 = np.sqrt(- np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
+              self.S2 = -np.sqrt(- self.Lambda_2 / np.conj(self.Lambda_2))
+              self.Gamma = 1j * dtc ** 2 / fd.sqrt(gamma) * fd.abs(1/self.Lambda_2)# TODO: CHECK?
+              self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
+              self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
+              tu, tp = fd.TrialFunctions(W)
+
+              fu, fp = fd.split(self.f)
+              # RHS
+              L = fd.inner(1/2*(fu.sub(0)+np.conj(self.S2[0])*fp.sub(0)), vu.sub(0)) * fd.dx
+              L += fd.inner(1/2*(fp.sub(0)+ np.conj(self.S1[0]*fu.sub(0))), vp.sub(0)) * fd.dx
+              for i in range(1, N_t):
+                     L += fd.inner(1/2*(fu.sub(i)+np.conj(self.S2[i])*fp.sub(i)), vu.sub(i)) * fd.dx
+                     L += fd.inner(1/2*(fp.sub(i)+ np.conj(self.S1[i]*fu.sub(i))), vp.sub(i)) * fd.dx
+              # LHS
+              D = fd.inner(self.Sigma_1[0]*tu[0], vu[0]) * fd.dx
+              D += fd.inner(dtc**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx
+              D = fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
+              D += fd.inner(dtc**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
+              for i in range(1, N_t):
+                     D += fd.inner(self.Sigma_1[i]*tu[i], vu[i]) * fd.dx
+                     D += fd.inner(dtc**2/2 * fd.grad(tu[i]),fd.grad(vu[i])) * fd.dx
+                     D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
+                     D += fd.inner(dtc**2/2 * fd.grad(tp[i]),fd.grad(vp[i])) * fd.dx
+              params = {'ksp_type': 'preonly', 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
+              prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs) # TODO: pull the bcs
+              self.solv_w = fd.LinearVariationalSolver(prob_w, solver_parameters=params)
+
+
+
+
+       def update(self, pc): # TODO: we don't need this?
+              pass
+
+
+       def apply(self, pc, x, y):
+              with self.xf.dat.vec_wo as v: # vector write only mode to ensure communication.
+                     x.copy(v)
+
+
+              #x_array = self.xf.dat.data # 2*N_x * N_t tensor
+              u_array = self.xf.dat[0].data[:] # N_x * N_t array
+              p_array = self.xf.dat[1].data[:]
+              # scaling FFT step
+              vu1 = fft(u_array, axis=0)
+              vp1 = fft(p_array,axis=0)
+              self.xf.dat[0].data[:] = vu1
+              self.xf.dat[1].data[:] = vp1
+
+              f = self.xf.riesz_representation() # the function within the mixed space
+              self.f.assign(f) # pass the copied value
+              self.solv_w.solve()
+
+              self.yf.assign(0)
+              for i in range(N_t):
+                     self.yf.sub(0)[i].assign(self.w.sub(0)[i]+fd.Constant(self.S2[i])*self.w.sub(1)[i])
+                     self.yf.sub(1)[i].assign(self.w.sub(1)[i]+fd.Constant(self.S1[i])*self.w.sub(0)[i])
+              
+              yu_array = self.yf.dat[0].data[:] # N_x * N_t array
+              yp_array = self.yf.dat[1].data[:]
+
+              yu1 = ifft(yu_array, axis=0)
+              yp1 = ifft(yp_array,axis=0)
+              self.yf.dat[0].data[:] = yu1
+              self.yf.dat[1].data[:] = yp1
+
+              with self.yf.dat.vec_ro as v: # read only mode to ensure communication 
+                     v.copy(y)
+
+
+
+
+
+       def applyTranspose(self, pc, x, y):
+              raise NotImplementedError
+       
+
+
+
+# pc version
+u_sol, p_sol = equ.solve(parameters=parameters)
 equ.write(u_sol, p_sol)
