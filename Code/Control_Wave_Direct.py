@@ -115,7 +115,7 @@ class Optimal_Control_Wave_Equation:
                      gn = self.g[i]
 
                      L_g = 1 / 2 * fd.inner((un-gn), (un-gn)) * fd.dx
-                     L_u_til = self.gamma / 2 * fd.inner(u_tiln,u_tiln) * fd.dx
+                     L_u_til = self.gamma / 2 * fd.inner(u_tiln, u_tiln) * fd.dx
                      L_p = fd.inner(((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln), pn) * fd.dx
                      L_p += fd.inner(fd.grad(pn), fd.grad(u_bar)) * fd.dx
 
@@ -167,12 +167,11 @@ class Optimal_Control_Wave_Equation:
                      u_tiln =  pn / self.gamma
                      u_bar = (un + unm2) / 2
 
-
-                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - u_tiln), self.tv) * fd.dx
-                     Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.tv)) * fd.dx
-                     Lp = fd.inner(un, self.tw) * fd.dx
-                     Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.tw) * fd.dx
-                     Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.tw)) * fd.dx
+                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - u_tiln), self.v[i]) * fd.dx
+                     Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
+                     Lp = fd.inner(un, self.w[i]) * fd.dx
+                     Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
+                     Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
 
                      if i == 0:
                             LHS = Lu + Lp
@@ -187,8 +186,8 @@ class Optimal_Control_Wave_Equation:
               for i in range(self.N - 1):
                      fn = self.f[i]
                      gn = self.g[i]
-                     Lu = fn * self.v * fd.dx
-                     Lp = gn * self.w * fd.dx
+                     Lu = fd.inner(fn, self.v[i]) * fd.dx
+                     Lp = fd.inner(gn, self.w[i]) * fd.dx
                      if i == 0:
                             RHS = Lu + Lp
                      else:
@@ -200,15 +199,19 @@ class Optimal_Control_Wave_Equation:
                      params = parameters
               else:
                      params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
-              self.Build_f()
-              self.Build_g()
-              self.Build_Initial_Condition()
-              self.Build_Action()
+
               if complex: #TODO: build the complete equation, do not use fd.derivative()
+                     self.Build_f()
+                     self.Build_g()
+                     self.Build_Initial_Condition()
                      self.Build_LHS()
                      self.Build_RHS()
-                     prob_up = fd.LinearVariationalProblem(self.LHS, self.LHS, self.U, bcs=self.bcs)
-                     solv_up = fd.LinearVariationalSolver(prob_up, solver_parameters=params)
+
+
+                     prob_up = fd.NonlinearVariationalProblem(self.LHS-self.RHS, self.U, bcs=self.bcs)
+                     solv_up = fd.NonlinearVariationalSolver(prob_up, solver_parameters=params)
+                     #prob_up = fd.LinearVariationalProblem(self.LHS, self.RHS, self.U, bcs=self.bcs)
+                     #solv_up = fd.LinearVariationalSolver(prob_up, solver_parameters=params)
 
                      solv_up.solve()
                      u_sol, p_sol = self.U.subfunctions
@@ -216,9 +219,13 @@ class Optimal_Control_Wave_Equation:
 
 
               else: #TODO: solve the real version problem directly without pc.
+                     self.Build_f()
+                     self.Build_g()
+                     self.Build_Initial_Condition()
+                     self.Build_Action()
                      du = fd.Function(self.FunctionSpace)
-                     M = fd.derivative(self.S, self.U) #TODO: is it workable in complex
-                     #print(fd.assemble(M).dat.data[:])
+                     M = fd.derivative(self.S, self.U) #TODO: is it workable in complex? No!
+                     # print(fd.assemble(M).dat.data[:])
 
                      prob_u = fd.NonlinearVariationalProblem(M, self.U, bcs=self.bcs)
                      solv_u = fd.NonlinearVariationalSolver(prob_u, solver_parameters=params)
@@ -324,7 +331,7 @@ vp = equ.w # test function space for p
 dtc = equ.dtc
 bcs = equ.bcs
 
-pc = False
+pc = True
 
 
 
@@ -357,24 +364,24 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
               self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
               self.S1 = np.sqrt(- np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
               self.S2 = -np.sqrt(- self.Lambda_2 / np.conj(self.Lambda_2))
-              self.Gamma = 1j * dtc ** 2 / fd.sqrt(gamma) * fd.abs(1/self.Lambda_2)# TODO: CHECK?
+              self.Gamma = 1j * dtc ** 2 / np.sqrt(gamma) * abs(1/self.Lambda_2)# TODO: CHECK?
               self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
               self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
               tu, tp = fd.TrialFunctions(W)
 
               fu, fp = fd.split(self.f)
               # RHS
-              L = fd.inner(1/2*(fu.sub(0)+np.conj(self.S2[0])*fp.sub(0)), vu.sub(0)) * fd.dx
-              L += fd.inner(1/2*(fp.sub(0)+ np.conj(self.S1[0]*fu.sub(0))), vp.sub(0)) * fd.dx
-              for i in range(1, N_t):
-                     L += fd.inner(1/2*(fu.sub(i)+np.conj(self.S2[i])*fp.sub(i)), vu.sub(i)) * fd.dx
-                     L += fd.inner(1/2*(fp.sub(i)+ np.conj(self.S1[i]*fu.sub(i))), vp.sub(i)) * fd.dx
+              L = fd.inner(1/2*(fu[0]+fd.conj(self.S2[0])*fp[0]), vu[0]) * fd.dx
+              L += fd.inner(1/2*(fp[0]+ fd.conj(self.S1[0]*fu[0])), vp[0]) * fd.dx
+              for i in range(1, N_t-1):
+                     L += fd.inner(1/2*(fu[i]+fd.conj(self.S2[i])*fp[i]), vu[i]) * fd.dx
+                     L += fd.inner(1/2*(fp[i]+ fd.conj(self.S1[i]*fu[i])), vp[i]) * fd.dx
               # LHS
               D = fd.inner(self.Sigma_1[0]*tu[0], vu[0]) * fd.dx
               D += fd.inner(dtc**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx
               D = fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
               D += fd.inner(dtc**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
-              for i in range(1, N_t):
+              for i in range(1, N_t-1): #TODO: dimension the same as unknowns
                      D += fd.inner(self.Sigma_1[i]*tu[i], vu[i]) * fd.dx
                      D += fd.inner(dtc**2/2 * fd.grad(tu[i]),fd.grad(vu[i])) * fd.dx
                      D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
