@@ -6,7 +6,6 @@ import cmath
 from scipy.fft import fft, ifft
 from firedrake.petsc import PETSc
 from matplotlib import pyplot as plt
-from pre_cond import DiagFFTPC
 
 class Optimal_Control_Wave_Equation:
 
@@ -32,10 +31,15 @@ class Optimal_Control_Wave_Equation:
               self.U = fd.Function(self.MixedSpace) # this is Mixed Function U = [u, p]
               self.u, self.p = fd.split(self.U)
               self.u_til = fd.Function(self.FunctionSpace) # U_til
+              self.TrialFunction = fd.TrialFunction(self.MixedSpace)
+              self.tv, self.tw = fd.split(self.TrialFunction)
               #du_trial = fd.TrialFunction(V)
               self.TestFunction = fd.TestFunction(self.MixedSpace)
               self.v, self.w = fd.split(self.TestFunction) # test function
               self.CG1 = fd.FunctionSpace(self.mesh, 'CG', 2)
+              zeros = fd.Function(self.FunctionSpace).interpolate(fd.as_vector([0 for i in range(self.N-1)]))
+              self.bcs = [fd.DirichletBC(self.MixedSpace.sub(0), zeros, 'on_boundary'),
+                     fd.DirichletBC(self.MixedSpace.sub(1), zeros, 'on_boundary')]
 
        # Try to use this function to check with the bugs.
        def f_1d(self, x, i, gamma):
@@ -110,10 +114,10 @@ class Optimal_Control_Wave_Equation:
                      fn = self.f[i] # TODO:doubt?
                      gn = self.g[i]
 
-                     L_g = 1 / 2 * (un - gn)**2 * fd.dx
-                     L_u_til = self.gamma / 2 * u_tiln**2 * fd.dx
-                     L_p = pn * ((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln) * fd.dx
-                     L_p += fd.dot(fd.grad(pn), fd.grad(u_bar)) * fd.dx
+                     L_g = 1 / 2 * fd.inner((un-gn), (un-gn)) * fd.dx
+                     L_u_til = self.gamma / 2 * fd.inner(u_tiln,u_tiln) * fd.dx
+                     L_p = fd.inner(((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln), pn) * fd.dx
+                     L_p += fd.inner(fd.grad(pn), fd.grad(u_bar)) * fd.dx
 
                      # L_g = self.dtc / 2 * (un - gn)**2 * fd.dx
                      # L_u_til = self.gamma / 2 * self.dtc * u_tiln**2 * fd.dx
@@ -137,34 +141,98 @@ class Optimal_Control_Wave_Equation:
               self.S_p = S_p
 
 
-       def solve(self, parameters=None):
+       def Build_LHS(self):
+              # build up the set of equations
+              for i in range(self.N-1): # loop over 0 to N-2
+                     if i == 0:
+                            unm1 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc #Changed here
+                            unm2 = self.u_0
+                     elif i == 1:
+                            unm1 = self.u[0]
+                            unm2 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc
+                     else:
+                            unm1 = self.u[i-1]
+                            unm2 = self.u[i-2]
+                     if i == self.N-2:
+                            pnp1 = fd.Function(self.R).assign(0.0)
+                            pnp2 = fd.Function(self.R).assign(0.0)
+                     elif i == self.N-3:
+                            pnp1 = self.p[i+1]
+                            pnp2 = fd.Function(self.R).assign(0.0)
+                     else:
+                            pnp1 = self.p[i+1]
+                            pnp2 = self.p[i+2]
+                     un = self.u[i]
+                     pn = self.p[i]
+                     u_tiln =  pn / self.gamma
+                     u_bar = (un + unm2) / 2
+
+
+                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - u_tiln), self.tv) * fd.dx
+                     Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.tv)) * fd.dx
+                     Lp = fd.inner(un, self.tw) * fd.dx
+                     Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.tw) * fd.dx
+                     Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.tw)) * fd.dx
+
+                     if i == 0:
+                            LHS = Lu + Lp
+                     else:
+                            LHS += Lu + Lp
+
+              self.LHS = LHS
+
+
+
+       def Build_RHS(self):
+              for i in range(self.N - 1):
+                     fn = self.f[i]
+                     gn = self.g[i]
+                     Lu = fn * self.v * fd.dx
+                     Lp = gn * self.w * fd.dx
+                     if i == 0:
+                            RHS = Lu + Lp
+                     else:
+                            RHS += Lu + Lp
+              self.RHS = RHS
+
+       def solve(self, parameters=None, complex=False):
+              if parameters: # set the solver parameter
+                     params = parameters
+              else:
+                     params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
               self.Build_f()
               self.Build_g()
               self.Build_Initial_Condition()
               self.Build_Action()
-              zeros = fd.Function(self.FunctionSpace).interpolate(fd.as_vector([0 for i in range(self.N-1)]))
-              bcs = [fd.DirichletBC(self.MixedSpace.sub(0), zeros, 'on_boundary'),
-                     fd.DirichletBC(self.MixedSpace.sub(1), zeros, 'on_boundary')]
-              du = fd.Function(self.FunctionSpace)
-              M = fd.derivative(self.S, self.U)
-              #print(fd.assemble(M).dat.data[:])
-              if parameters:
-                     params = parameters
-              else:
-                     params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
-              prob_u = fd.NonlinearVariationalProblem(M, self.U, bcs=bcs)
-              solv_u = fd.NonlinearVariationalSolver(prob_u, solver_parameters=params)
+              if complex: #TODO: build the complete equation, do not use fd.derivative()
+                     self.Build_LHS()
+                     self.Build_RHS()
+                     prob_up = fd.LinearVariationalProblem(self.LHS, self.LHS, self.U, bcs=self.bcs)
+                     solv_up = fd.LinearVariationalSolver(prob_up, solver_parameters=params)
 
-              solv_u.solve()
-              u_sol, p_sol = self.U.subfunctions
+                     solv_up.solve()
+                     u_sol, p_sol = self.U.subfunctions
 
-              del_M = fd.assemble(M, bcs=bcs).dat.data[:]
-              print("check if solver is working, norm of assembled del S:", np.linalg.norm(del_M))
-              del_g = fd.assemble(self.S_g)
-              del_S_til = fd.assemble(self.S_til)
-              del_p = fd.assemble(self.S_p)
-              print("check assembled action parts", del_g, del_S_til, del_p)
-              #TODO: this del_p should be 0 and del_g should be near 0 if gamma is nearly 0 i.e. we can perfect control without caring cost
+
+
+              else: #TODO: solve the real version problem directly without pc.
+                     du = fd.Function(self.FunctionSpace)
+                     M = fd.derivative(self.S, self.U) #TODO: is it workable in complex
+                     #print(fd.assemble(M).dat.data[:])
+
+                     prob_u = fd.NonlinearVariationalProblem(M, self.U, bcs=self.bcs)
+                     solv_u = fd.NonlinearVariationalSolver(prob_u, solver_parameters=params)
+
+                     solv_u.solve()
+                     u_sol, p_sol = self.U.subfunctions
+
+                     del_M = fd.assemble(M, bcs=self.bcs).dat.data[:]
+                     print("check if solver is working, norm of assembled del S:", np.linalg.norm(del_M))
+                     del_g = fd.assemble(self.S_g)
+                     del_S_til = fd.assemble(self.S_til)
+                     del_p = fd.assemble(self.S_p)
+                     print("check assembled action parts", del_g, del_S_til, del_p)
+                     #TODO: this del_p should be 0 and del_g should be near 0 if gamma is nearly 0 i.e. we can perfect control without caring cost
               return u_sol, p_sol
 
 
@@ -254,6 +322,9 @@ W = equ.MixedSpace # W = V*V
 vu = equ.v # test function space for u
 vp = equ.w # test function space for p
 dtc = equ.dtc
+bcs = equ.bcs
+
+pc = False
 
 
 
@@ -262,6 +333,7 @@ dtc = equ.dtc
 
 # here we define the preconditioner class, it is kept in the same file.
 class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
+
 
        def __init__(self):
               self.initialized = False
@@ -308,10 +380,8 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
                      D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
                      D += fd.inner(dtc**2/2 * fd.grad(tp[i]),fd.grad(vp[i])) * fd.dx
               params = {'ksp_type': 'preonly', 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
-              prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs) # TODO: pull the bcs
+              prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs)
               self.solv_w = fd.LinearVariationalSolver(prob_w, solver_parameters=params)
-
-
 
 
        def update(self, pc): # TODO: we don't need this?
@@ -321,7 +391,6 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
        def apply(self, pc, x, y):
               with self.xf.dat.vec_wo as v: # vector write only mode to ensure communication.
                      x.copy(v)
-
 
               #x_array = self.xf.dat.data # 2*N_x * N_t tensor
               u_array = self.xf.dat[0].data[:] # N_x * N_t array
@@ -352,16 +421,16 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
               with self.yf.dat.vec_ro as v: # read only mode to ensure communication 
                      v.copy(y)
 
-
-
-
-
        def applyTranspose(self, pc, x, y):
               raise NotImplementedError
-       
 
 
 
-# pc version
-u_sol, p_sol = equ.solve(parameters=parameters)
-equ.write(u_sol, p_sol)
+if pc:
+       # pc version
+       u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
+       equ.write(u_sol, p_sol)
+else:
+       # direct version
+       u_sol, p_sol = equ.solve()
+       equ.write(u_sol, p_sol)
