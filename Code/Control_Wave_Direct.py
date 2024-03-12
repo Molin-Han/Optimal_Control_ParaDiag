@@ -435,10 +435,29 @@ class DiagFFTPC(fd.PCBase):
                      # print('!!!!',type(self.yf.sub(0)))
                      # print('!!!!',self.yf.sub(0).dat.data[:])
                      # print('!!!!',self.yf.sub(0).dat.data[:].shape)
-                     self.yf.sub(0).sub(i).assign(self.w.sub(0).sub(i) + fd.Constant(self.S2[i]) * self.w.sub(1).sub(i))
-                     self.yf.sub(1).sub(i).assign(self.w.sub(1).sub(i) + fd.Constant(self.S1[i]) * self.w.sub(0).sub(i))
+                     self.yf.sub(0).sub(i).assign(self.w.sub(0).sub(i) * fd.Constant(1/2) + fd.Constant(self.S2[i]/2) * self.w.sub(1).sub(i))
+                     self.yf.sub(1).sub(i).assign(self.w.sub(1).sub(i) * fd.Constant(1/2) + fd.Constant(self.S1[i]/2) * self.w.sub(0).sub(i))
               
               yu_array = self.yf.dat[0].data[:] # N_x * N_t array
+              yp_array = self.yf.dat[1].data[:]
+
+              yu1 = ifft(yu_array, axis=0)
+              yp1 = ifft(yp_array,axis=0)
+              self.yf.dat[0].data[:] = yu1
+              self.yf.dat[1].data[:] = yp1
+
+              ita_uarray = self.yf.dat[0].data[:]
+              ita_parray = self.yf.dat[1].data[:]
+              itu1 = fft(ita_uarray, axis=0)
+              itp1 = fft(ita_parray, axis=0)
+              self.yf.dat[0].data[:] = itu1
+              self.yf.dat[1].data[:] = itp1
+
+              for i in range(N_t - 1):
+                     self.yf.sub(0).sub(i).assign(self.yf.sub(0).sub(i)/fd.Constant(self.Lambda_2[i]))
+                     self.yf.sub(1).sub(i).assign(self.yf.sub(1).sub(i)/fd.Constant(self.Lambda_2[i]))
+
+              yu_array = self.yf.dat[0].data[:]
               yp_array = self.yf.dat[1].data[:]
 
               yu1 = ifft(yu_array, axis=0)
