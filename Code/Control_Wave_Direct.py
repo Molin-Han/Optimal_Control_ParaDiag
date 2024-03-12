@@ -6,6 +6,8 @@ import cmath
 from scipy.fft import fft, ifft
 from firedrake.petsc import PETSc
 from matplotlib import pyplot as plt
+#from petsc4py import PETSc
+PETSc.Sys.popErrorHandler()
 
 class Optimal_Control_Wave_Equation:
 
@@ -41,9 +43,6 @@ class Optimal_Control_Wave_Equation:
               self.bcs = [fd.DirichletBC(self.MixedSpace.sub(0), zeros, 'on_boundary'),
                      fd.DirichletBC(self.MixedSpace.sub(1), zeros, 'on_boundary')]
 
-       # Try to use this function to check with the bugs.
-       def f_1d(self, x, i, gamma):
-              return -1/gamma * fd.sin(fd.pi * x) * (fd.exp(i * self.dtc))
 
 #TODO: make a transformation function to transfer from u-coord to t-coord?
        def Build_f(self):
@@ -61,7 +60,7 @@ class Optimal_Control_Wave_Equation:
                             #TODO: f=0 gives when gamma is really small, to avoid numerical instability in 1/gamma
                             f_exp.append(- 1 / self.gamma * fd.sin(fd.pi * self.x) * (fd.exp(i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)))**2)
                             f_0.append(fd.Function(self.R).assign(0))
-              self.f.interpolate(fd.as_vector(f_exp)) # Solve for f = 0 problem
+              self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # Solve for f = 0 problem # TODO: scale factor root gamma
               self.f_a.interpolate(fd.as_vector(f_exp))
               self.f_exp = f_exp
               # print(fd.Function(self.CG1).interpolate(self.f_exp[0]).dat.data)
@@ -142,14 +141,15 @@ class Optimal_Control_Wave_Equation:
 
 
        def Build_LHS(self):
+              scale = fd.sqrt(self.gamma)
               # build up the set of equations
               for i in range(self.N-1): # loop over 0 to N-2
                      if i == 0:
-                            unm1 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc #Changed here
-                            unm2 = self.u_0
+                            unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
+                            unm2 = self.u_0 * scale
                      elif i == 1:
                             unm1 = self.u[0]
-                            unm2 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc
+                            unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale
                      else:
                             unm1 = self.u[i-1]
                             unm2 = self.u[i-2]
@@ -167,9 +167,9 @@ class Optimal_Control_Wave_Equation:
                      u_tiln =  pn / self.gamma
                      u_bar = (un + unm2) / 2
 
-                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - u_tiln), self.v[i]) * fd.dx
+                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / scale), self.v[i]) * fd.dx
                      Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
-                     Lp = fd.inner(un, self.w[i]) * fd.dx
+                     Lp = fd.inner(un / scale, self.w[i]) * fd.dx
                      Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
                      Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
 
@@ -288,7 +288,8 @@ class Optimal_Control_Wave_Equation:
                      #print(fd.norm(u_out-g_out))
                      #print(i)
                      # TODO: test for f = 0
-                     print("error for f=0", fd.norm(p_out - self.gamma * fd.Function(self.CG1).interpolate(self.f_exp[i]) + p_ana)/fd.norm(p_out))
+                     if i < self.N-1:
+                            print("error for f=0", fd.norm(p_out - self.gamma * fd.Function(self.CG1).interpolate(self.f_exp[i]) + p_ana)/fd.norm(p_out))
                      # TODO: test for relative error for true problem.
                      print("Relative Error in u,p is", [fd.norm(u_out-u_ana) / fd.norm(u_ana), fd.norm(p_out-p_ana) / fd.norm(p_ana)])
                      if i < self.N - 1:
@@ -302,10 +303,10 @@ class Optimal_Control_Wave_Equation:
 
 # the control test problem
 T = 2
-N_t = 64
+N_t = 50
 N_x = 128
 dim = 1
-gamma = 1e-1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+gamma = 1e-6 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
 
 equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
 
@@ -331,15 +332,13 @@ vp = equ.w # test function space for p
 dtc = equ.dtc
 bcs = equ.bcs
 
+# Options
 pc = True
-
-
-
-
+complex = True
 
 
 # here we define the preconditioner class, it is kept in the same file.
-class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
+class DiagFFTPC(fd.PCBase):
 
 
        def __init__(self):
@@ -359,35 +358,52 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
               self.w = fd.Function(W)
               self.f = fd.Function(W)
 
-              # eigenvalues for Gamma 1&2
-              self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/N_t * np.arange(N_t)) + np.exp(4j*np.pi/N_t * np.arange(N_t))
-              self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
-              self.S1 = np.sqrt(- np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
-              self.S2 = -np.sqrt(- self.Lambda_2 / np.conj(self.Lambda_2))
-              self.Gamma = 1j * dtc ** 2 / np.sqrt(gamma) * abs(1/self.Lambda_2)# TODO: CHECK?
+              # eigenvalues for Gamma 1&2 #TODO: should it be N_t-1?
+              self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/ (N_t-1) * np.arange(N_t-1)) + np.exp(4j*np.pi/(N_t-1) * np.arange(N_t-1))
+              self.Lambda_2 = 1 + np.exp(4j*np.pi/(N_t-1) * np.arange(N_t-1))
+
+              self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
+              self.S2 = -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
+
+              self.Gamma = 1j * dtc ** 2 / np.sqrt(gamma) * np.abs(1/self.Lambda_2)# TODO: CHECK?
+
               self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
               self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
-              tu, tp = fd.TrialFunctions(W)
 
+
+              tu, tp = fd.TrialFunctions(W)
               fu, fp = fd.split(self.f)
+              # TODO: make it cleaner
+
+
               # RHS
               L = fd.inner(1/2*(fu[0]+fd.conj(self.S2[0])*fp[0]), vu[0]) * fd.dx
               L += fd.inner(1/2*(fp[0]+ fd.conj(self.S1[0]*fu[0])), vp[0]) * fd.dx
               for i in range(1, N_t-1):
                      L += fd.inner(1/2*(fu[i]+fd.conj(self.S2[i])*fp[i]), vu[i]) * fd.dx
                      L += fd.inner(1/2*(fp[i]+ fd.conj(self.S1[i]*fu[i])), vp[i]) * fd.dx
+
+
               # LHS
               D = fd.inner(self.Sigma_1[0]*tu[0], vu[0]) * fd.dx
-              D += fd.inner(dtc**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx
-              D = fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
+              D += fd.inner(dtc**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx #TODO: minus sign here
+              D += fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
               D += fd.inner(dtc**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
               for i in range(1, N_t-1): #TODO: dimension the same as unknowns
                      D += fd.inner(self.Sigma_1[i]*tu[i], vu[i]) * fd.dx
                      D += fd.inner(dtc**2/2 * fd.grad(tu[i]),fd.grad(vu[i])) * fd.dx
                      D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
                      D += fd.inner(dtc**2/2 * fd.grad(tp[i]),fd.grad(vp[i])) * fd.dx
+
+
+              # Simple solver for the test of the rest
+              A = fd.inner(tu, vu) * fd.dx + fd.inner(tp, vp) * fd.dx
+              B = fd.inner(fu, vu) * fd.dx + fd.inner(fp, vp) * fd.dx
+
+
               params = {'ksp_type': 'preonly', 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
               prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs)
+              #prob_w = fd.LinearVariationalProblem(A, B, self.w, bcs=bcs)
               self.solv_w = fd.LinearVariationalSolver(prob_w, solver_parameters=params)
 
 
@@ -396,6 +412,7 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
 
 
        def apply(self, pc, x, y):
+              PETSc.Sys.Print('applying')
               with self.xf.dat.vec_wo as v: # vector write only mode to ensure communication.
                      x.copy(v)
 
@@ -411,11 +428,15 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
               f = self.xf.riesz_representation() # the function within the mixed space
               self.f.assign(f) # pass the copied value
               self.solv_w.solve()
+              PETSc.Sys.Print('pc solver solved')
 
               self.yf.assign(0)
-              for i in range(N_t):
-                     self.yf.sub(0)[i].assign(self.w.sub(0)[i]+fd.Constant(self.S2[i])*self.w.sub(1)[i])
-                     self.yf.sub(1)[i].assign(self.w.sub(1)[i]+fd.Constant(self.S1[i])*self.w.sub(0)[i])
+              for i in range(N_t - 1):
+                     # print('!!!!',type(self.yf.sub(0)))
+                     # print('!!!!',self.yf.sub(0).dat.data[:])
+                     # print('!!!!',self.yf.sub(0).dat.data[:].shape)
+                     self.yf.sub(0).sub(i).assign(self.w.sub(0).sub(i) + fd.Constant(self.S2[i]) * self.w.sub(1).sub(i))
+                     self.yf.sub(1).sub(i).assign(self.w.sub(1).sub(i) + fd.Constant(self.S1[i]) * self.w.sub(0).sub(i))
               
               yu_array = self.yf.dat[0].data[:] # N_x * N_t array
               yp_array = self.yf.dat[1].data[:]
@@ -428,16 +449,26 @@ class DiagFFTPC(fd.PCBase):# TODO: Where to inherit from
               with self.yf.dat.vec_ro as v: # read only mode to ensure communication 
                      v.copy(y)
 
+              PETSc.Sys.Print('applyed')
+
        def applyTranspose(self, pc, x, y):
               raise NotImplementedError
 
 
 
 if pc:
-       # pc version
-       u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
-       equ.write(u_sol, p_sol)
+       if complex:
+              # pc version
+              u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
+              equ.write(u_sol, p_sol)
+       else:
+              print('Should use complex firedrake to implement the preconditioner.')
 else:
-       # direct version
-       u_sol, p_sol = equ.solve()
-       equ.write(u_sol, p_sol)
+       if complex:
+              # direct version
+              u_sol, p_sol = equ.solve(complex=True)
+              equ.write(u_sol, p_sol)
+       else:
+              # direct version
+              u_sol, p_sol = equ.solve()
+              equ.write(u_sol, p_sol)
