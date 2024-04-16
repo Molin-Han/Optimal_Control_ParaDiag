@@ -6,8 +6,9 @@ import cmath
 from scipy.fft import fft, ifft
 from firedrake.petsc import PETSc
 from matplotlib import pyplot as plt
+from firedrake.output import VTKFile
 #from petsc4py import PETSc
-PETSc.Sys.popErrorHandler()
+#PETSc.Sys.popErrorHandler()
 
 class Optimal_Control_Wave_Equation:
 
@@ -29,7 +30,7 @@ class Optimal_Control_Wave_Equation:
                      self.x, = fd.SpatialCoordinate(self.mesh)
               if dim == 2:
                      self.x, self.y = fd.SpatialCoordinate(self.mesh)
-              self.FunctionSpace = fd.VectorFunctionSpace(self.mesh, "CG", 1, dim=self.N-1) # This is FunctionSpace V
+              self.FunctionSpace = fd.VectorFunctionSpace(self.mesh, "CG", 1, dim=self.N) # This is FunctionSpace V
               self.MixedSpace = self.FunctionSpace * self.FunctionSpace # this is FunctionSpace W = V*V
               self.U = fd.Function(self.MixedSpace) # this is Mixed Function U = [u, p]
               self.u, self.p = fd.split(self.U)
@@ -40,12 +41,11 @@ class Optimal_Control_Wave_Equation:
               self.TestFunction = fd.TestFunction(self.MixedSpace)
               self.v, self.w = fd.split(self.TestFunction) # test function
               self.CG1 = fd.FunctionSpace(self.mesh, 'CG', 2)
-              zeros = fd.Function(self.FunctionSpace).interpolate(fd.as_vector([0 for i in range(self.N-1)]))
+              zeros = fd.Function(self.FunctionSpace).interpolate(fd.as_vector([0 for i in range(self.N)]))
               self.bcs = [fd.DirichletBC(self.MixedSpace.sub(0), zeros, 'on_boundary'),
                      fd.DirichletBC(self.MixedSpace.sub(1), zeros, 'on_boundary')]
 
 
-#TODO: make a transformation function to transfer from u-coord to t-coord?
        def Build_f(self):
               self.f = fd.Function(self.FunctionSpace)
               self.f_a = fd.Function(self.FunctionSpace)
@@ -57,11 +57,14 @@ class Optimal_Control_Wave_Equation:
                             f_exp.append((1+2*fd.pi**2) * fd.exp(i*self.dtc) * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y)
                                    -1/self.gamma *(i*self.dtc - fd.Function(self.R).assign(self.T))**2 * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y))
               if self.dim == 1:
-                     for i in range(1, self.N):
+                     for i in range(self.N): #TODO: 
                             #TODO: f=0 gives when gamma is really small, to avoid numerical instability in 1/gamma
-                            f_exp.append(- 1 / self.gamma * fd.sin(fd.pi * self.x) * (fd.exp(i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)))**2)
+                            f_exp.append(- self.dtc**2 / self.gamma * fd.sin(fd.pi * self.x) * (fd.exp(i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)))**2)
                             f_0.append(fd.Function(self.R).assign(0))
-              self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # Solve for f = 0 problem # TODO: scale factor root gamma
+              if pc:
+                     self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # Solve for f = 0 problem # TODO: scale factor root gamma
+              else:
+                     self.f.interpolate(fd.as_vector(f_exp))
               self.f_a.interpolate(fd.as_vector(f_exp))
               self.f_exp = f_exp
               # print(fd.Function(self.CG1).interpolate(self.f_exp[0]).dat.data)
@@ -75,10 +78,10 @@ class Optimal_Control_Wave_Equation:
                             g_exp.append((fd.exp(i*self.dtc) + fd.Function(self.R).assign(2.0) 
                                           + 2*fd.pi**2*(i*self.dtc-self.T)**2) * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y))
               if self.dim == 1:
-                     for i in range(2, self.N + 1):
-                            g_exp.append(2 * (2*fd.exp(2*i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)+i*self.dtc)) * fd.sin(fd.pi*self.x)
+                     for i in range(1, self.N + 1):
+                            g_exp.append(self.dtc**2 *(2 * (2*fd.exp(2*i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)+i*self.dtc)) * fd.sin(fd.pi*self.x)
                                    + fd.pi ** 2 * fd.sin(fd.pi*self.x)*(fd.exp(i*self.dtc)-fd.exp(fd.Function(self.R).assign(self.T)))**2
-                                   + fd.sin(fd.pi * self.x) * fd.cos(fd.pi * i * self.dtc))
+                                   + fd.sin(fd.pi * self.x) * fd.cos(fd.pi * i * self.dtc)))
               self.g.interpolate(fd.as_vector(g_exp))
 
 
@@ -141,16 +144,22 @@ class Optimal_Control_Wave_Equation:
               self.S_p = S_p
 
 
-       def Build_LHS(self):
+       def Build_LHS(self):#FIXME: 4.16 Timeline
               scale = fd.sqrt(self.gamma) # This is used for rescaling
               # build up the set of equations
-              for i in range(self.N-1): # loop over 0 to N-2
+              for i in range(self.N): # loop over 0 to N-1
                      if i == 0:
-                            unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
+                            if pc:
+                                   unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
+                            else:
+                                   unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) #Changed here
                             unm2 = self.u_0 * scale
                      elif i == 1:
                             unm1 = self.u[0]
-                            unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale
+                            if pc:
+                                   unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale
+                            else:
+                                   unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc)
                      else:
                             unm1 = self.u[i-1]
                             unm2 = self.u[i-2]
@@ -168,11 +177,18 @@ class Optimal_Control_Wave_Equation:
                      u_tiln =  pn / self.gamma
                      u_bar = (un + unm2) / 2
 
-                     Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / scale), self.v[i]) * fd.dx
-                     Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
-                     Lp = fd.inner(un / scale, self.w[i]) * fd.dx #TODO: AAAAAAA
-                     Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
-                     Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
+                     if pc:
+                            Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / scale), self.v[i]) * fd.dx
+                            Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
+                            Lp = fd.inner(un / scale, self.w[i]) * fd.dx #TODO: AAAAAAA
+                            Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
+                            Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
+                     else:
+                            Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / self.gamma), self.v[i]) * fd.dx
+                            Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
+                            Lp = fd.inner(un, self.w[i]) * fd.dx #TODO: AAAAAAA
+                            Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
+                            Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
 
                      if i == 0:
                             LHS = Lu + Lp
@@ -247,11 +263,11 @@ class Optimal_Control_Wave_Equation:
        def write(self, u_sol, p_sol): # TODO: check this: DONE at 28/1
               # WRITE SOLUTION
               if self.dim == 1:
-                     sol_file = fd.File('sol_1d.pvd')
-                     ana_file = fd.File('ana_1d.pvd')
+                     sol_file = VTKFile('sol_1d.pvd')
+                     ana_file = VTKFile('ana_1d.pvd')
               elif self.dim == 2:
-                     sol_file = fd.File('sol_2d.pvd')
-                     ana_file = fd.File('ana_2d.pvd')
+                     sol_file = VTKFile('sol_2d.pvd')
+                     ana_file = VTKFile('ana_2d.pvd')
               u_out = fd.Function(self.CG1, name='u_out')
               p_out = fd.Function(self.CG1, name='p_out')
               # ANALYTIC SOLUTION
@@ -304,10 +320,10 @@ class Optimal_Control_Wave_Equation:
 
 # the control test problem
 T = 2
-N_t = 4
+N_t = 20
 N_x = 128
 dim = 1
-gamma = 1.0 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+gamma = 1e-6 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
 gamma_ufl = fd.Constant(1.0)
 
 equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
@@ -335,7 +351,7 @@ dt = equ.dt
 bcs = equ.bcs
 
 # Options
-pc = True
+pc = False
 complex = True
 
 
