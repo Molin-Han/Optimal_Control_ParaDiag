@@ -144,54 +144,75 @@ class Optimal_Control_Wave_Equation:
               self.S_p = S_p
 
 
-       def Build_LHS(self):#FIXME: 4.16 Timeline
+       def Build_LHS(self):
               scale = fd.sqrt(self.gamma) # This is used for rescaling
               # build up the set of equations
               for i in range(self.N): # loop over 0 to N-1
-                     if i == 0:
-                            if pc:
-                                   unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
-                            else:
-                                   unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) #Changed here
-                            unm2 = self.u_0 * scale
-                     elif i == 1:
+                     # if i == 0:
+                     #        if pc:
+                     #               unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
+                     #        else:
+                     #               unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) #Changed here
+                     #        unm2 = self.u_0 * scale
+                     if i == 1:
                             unm1 = self.u[0]
                             if pc:
-                                   unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale
+                                   unm2 = self.u_0  * scale
                             else:
-                                   unm2 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc)
+                                   unm2 = self.u_0
                      else:
                             unm1 = self.u[i-1]
                             unm2 = self.u[i-2]
-                     if i == self.N-2:
-                            pnp1 = fd.Function(self.R).assign(0.0)
-                            pnp2 = fd.Function(self.R).assign(0.0)
-                     elif i == self.N-3:
-                            pnp1 = self.p[i+1]
-                            pnp2 = fd.Function(self.R).assign(0.0)
-                     else:
-                            pnp1 = self.p[i+1]
-                            pnp2 = self.p[i+2]
+                     # if i == self.N-2:
+                     #        pnp1 = fd.Function(self.R).assign(0.0)
+                     #        pnp2 = fd.Function(self.R).assign(0.0)
+                     # elif i == self.N-3:
+                     #        pnp1 = self.p[i+1]
+                     #        pnp2 = fd.Function(self.R).assign(0.0)
+                     
+                     pnm1 = self.p[i-1]
+                     pnp1 = self.p[i+1]
                      un = self.u[i]
                      pn = self.p[i]
-                     u_tiln =  pn / self.gamma
-                     u_bar = (un + unm2) / 2
-
-                     if pc:
-                            Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / scale), self.v[i]) * fd.dx
-                            Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
-                            Lp = fd.inner(un / scale, self.w[i]) * fd.dx #TODO: AAAAAAA
-                            Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
-                            Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
-                     else:
-                            Lu = fd.inner((1/self.dtc**2 * (un-2*unm1+unm2) - pn / self.gamma), self.v[i]) * fd.dx
-                            Lu += fd.inner(fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
-                            Lp = fd.inner(un, self.w[i]) * fd.dx #TODO: AAAAAAA
-                            Lp += fd.inner((1/self.dtc**2*(pn-2*pnp1+pnp2)), self.w[i]) * fd.dx
-                            Lp += fd.inner(fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
 
                      if i == 0:
-                            LHS = Lu + Lp
+                            if pc:
+                                   Lu_0 = fd.inner(scale * un, self.v[i]) * fd.dx
+                                   Lu_0 += fd.inner(self.dtc**2 / 2 * scale * fd.grad(un), fd.grad(self.v[i])) * fd.dx
+                                   Lu_0 += - self.dtc**2 / 2 / scale * pn
+                            else:
+                                   Lu_0 = fd.inner(un, self.v[i]) * fd.dx
+                                   Lu_0 += fd.inner(self.dtc**2 / 2 * fd.grad(un), fd.grad(self.v[i])) * fd.dx
+                                   Lu_0 += - self.dtc**2 / 2 / self.gamma * pn
+
+                     elif i == self.N - 1:
+                            if pc:
+                                   Lp_Nm1 = fd.inner(pn, self.w[i]) * fd.dx
+                                   Lp_Nm1 += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
+                                   Lp_Nm1 += self.dtc**2 / 2 * un * scale
+                            else:
+                                   Lp_Nm1 = fd.inner(pn, self.w[i]) * fd.dx
+                                   Lp_Nm1 += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
+                                   Lp_Nm1 += self.dtc**2 / 2 * un
+
+                     else:
+                            if pc:
+                                   Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / scale), self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2) * scale, fd.grad(self.v[i])) * fd.dx #TODO: Scale!!!
+                                   Lp = fd.inner(self.dtc**2 * un / scale, self.w[i]) * fd.dx
+                                   Lp += fd.inner((pnm1-2*pn+pnp1), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pnm1+pnp1)/2), fd.grad(self.w[i])) * fd.dx
+                            else:
+                                   Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / self.gamma), self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
+                                   Lp = fd.inner(self.dtc**2 * un, self.w[i]) * fd.dx
+                                   Lp += fd.inner((pnm1-2*pn+pnp1), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pnm1+pnp1)/2), fd.grad(self.w[i])) * fd.dx
+
+                     if i == 0:
+                            LHS = Lu_0
+                     elif i == self.N - 1:
+                            LHS += Lp_Nm1
                      else:
                             LHS += Lu + Lp
 
@@ -200,11 +221,23 @@ class Optimal_Control_Wave_Equation:
 
 
        def Build_RHS(self):
-              for i in range(self.N - 1):
+              for i in range(self.N): # loop over o to N-1
                      fn = self.f[i]
                      gn = self.g[i]
-                     Lu = fd.inner(fn, self.v[i]) * fd.dx
-                     Lp = fd.inner(gn, self.w[i]) * fd.dx
+                     if i == 0:
+                            Lu = fd.inner(self.dtc**2 * (1/2 * fn + self.u_1 /self.dtc + self.u_0 /self.dtc**2),self.v[i]) * fd.dx
+                            Lp = fd.inner(gn, self.w[i]) * fd.dx
+                     elif i == 1:
+                            Lu = fd.inner(self.dtc**2* self.f[i], self.v[i]) * fd.dx
+                            Lu -= fd.inner(self.u_0, self.v[i]) * fd.dx
+                            Lu -= fd.inner(fd.grad(self.u_0)/2, fd.grad(self.v[i])) * fd.dx
+                            Lp = fd.inner(gn, self.w[i]) * fd.dx
+                     elif i == self.N - 1:
+                            Lu = fd.inner(fn, self.v[i]) * fd.dx
+                            Lp = fd.inner(1/2 * gn, self.w[i]) * fd.dx
+                     else:
+                            Lu = fd.inner(fn, self.v[i]) * fd.dx
+                            Lp = fd.inner(gn, self.w[i]) * fd.dx
                      if i == 0:
                             RHS = Lu + Lp
                      else:
@@ -370,15 +403,15 @@ class DiagFFTPC(fd.PCBase):
               self.update(pc)
 
 
-       def initialize(self, pc):
+       def initialize(self, pc): #FIXME: N_t variables now.
               self.xf = fd.Cofunction(W.dual()) # copy the code back.
               self.yf = fd.Function(W)
               self.w = fd.Function(W)
               self.f = fd.Function(W)
 
               # eigenvalues for Gamma 1&2 #TODO: should it be N_t-1?
-              self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/ (N_t-1) * np.arange(N_t-1)) + np.exp(4j*np.pi/(N_t-1) * np.arange(N_t-1))
-              self.Lambda_2 = 1 + np.exp(4j*np.pi/(N_t-1) * np.arange(N_t-1))
+              self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/ N_t * np.arange(N_t)) + np.exp(4j*np.pi/(N_t) * np.arange(N_t))
+              self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
 
               self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
               self.S2 = -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
@@ -397,7 +430,7 @@ class DiagFFTPC(fd.PCBase):
               # RHS
               L = fd.inner(1/2*(fu[0]+fd.conj(self.S2[0])*fp[0]), vu[0]) * fd.dx
               L += fd.inner(1/2*(fp[0]+ fd.conj(self.S1[0]*fu[0])), vp[0]) * fd.dx
-              for i in range(1, N_t-1):
+              for i in range(1, N_t):
                      L += fd.inner(1/2*(fu[i]+ fd.conj(self.S2[i])*fp[i]), vu[i]) * fd.dx
                      L += fd.inner(1/2*(fp[i]+ fd.conj(self.S1[i]*fu[i])), vp[i]) * fd.dx
 
@@ -407,7 +440,7 @@ class DiagFFTPC(fd.PCBase):
               D += fd.inner(dt**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx #TODO: minus sign here
               D += fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
               D += fd.inner(dt**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
-              for i in range(1, N_t-1): #TODO: dimension the same as unknowns
+              for i in range(1, N_t): #TODO: dimension the same as unknowns
                      D += fd.inner(self.Sigma_1[i]*tu[i], vu[i]) * fd.dx
                      D += fd.inner(dt**2/2 * fd.grad(tu[i]),fd.grad(vu[i])) * fd.dx
                      D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
@@ -452,7 +485,7 @@ class DiagFFTPC(fd.PCBase):
 
               self.yf.assign(0)
               # Apply S X M on w
-              for i in range(N_t - 1):
+              for i in range(N_t):
                      self.yf.sub(0).sub(i).assign(self.w.sub(0).sub(i) + fd.Constant(self.S2[i]) * self.w.sub(1).sub(i))
                      self.yf.sub(1).sub(i).assign(self.w.sub(1).sub(i) + fd.Constant(self.S1[i]) * self.w.sub(0).sub(i))
               
@@ -479,7 +512,7 @@ class DiagFFTPC(fd.PCBase):
               # self.yf.dat[1].data[:] = itp1
 
               # apply lambda_2^-1 to the ffted vector #TODO: seems not to be consistent with the paper
-              for i in range(N_t - 1):
+              for i in range(N_t):
                      self.yf.sub(0).sub(i).assign(self.yf.sub(0).sub(i)/fd.Constant(self.Lambda_2[i]))
                      self.yf.sub(1).sub(i).assign(self.yf.sub(1).sub(i)/fd.Constant(self.Lambda_2[i].conj()))
 
