@@ -21,9 +21,9 @@ class Optimal_Control_Wave_Equation:
               self.T = T # total time interval
               self.R = fd.FunctionSpace(self.mesh, 'R', 0) # constant function space
               self.gamma = fd.Function(self.R).assign(gamma) # Regularising coefficient
-              self.dt = T/N_t
+              self.dt = T / N_t
               self.dtc = fd.Function(self.R).assign(T/N_t) # firedrake constant for time step
-              self.N = N_t # number of discretisation # FIXME:N is changed
+              self.N = N_t # number of discretisation # FIXME: N is changed
               self.dim = dim # dimension of the problem
               # Setup for the coordinates
               if dim == 1:
@@ -37,7 +37,6 @@ class Optimal_Control_Wave_Equation:
               self.u_til = fd.Function(self.FunctionSpace) # U_til
               self.TrialFunction = fd.TrialFunction(self.MixedSpace)
               self.tv, self.tw = fd.split(self.TrialFunction)
-              #du_trial = fd.TrialFunction(V)
               self.TestFunction = fd.TestFunction(self.MixedSpace)
               self.v, self.w = fd.split(self.TestFunction) # test function
               self.CG1 = fd.FunctionSpace(self.mesh, 'CG', 2)
@@ -51,18 +50,11 @@ class Optimal_Control_Wave_Equation:
               self.f_a = fd.Function(self.FunctionSpace)
               self.func = fd.Function(self.CG1)
               f_exp = []
-              f_0 = []
-              if self.dim == 2: # need correction
-                     for i in range(self.N - 1):
-                            f_exp.append((1+2*fd.pi**2) * fd.exp(i*self.dtc) * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y)
-                                   -1/self.gamma *(i*self.dtc - fd.Function(self.R).assign(self.T))**2 * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y))
               if self.dim == 1:
                      for i in range(self.N): #TODO: 
-                            #TODO: f=0 gives when gamma is really small, to avoid numerical instability in 1/gamma
                             f_exp.append(- self.dtc**2 / self.gamma * fd.sin(fd.pi * self.x) * (fd.exp(i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)))**2)
-                            f_0.append(fd.Function(self.R).assign(0))
               if pc:
-                     self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # Solve for f = 0 problem # TODO: scale factor root gamma
+                     self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # scale factor root gamma
               else:
                      self.f.interpolate(fd.as_vector(f_exp))
               self.f_a.interpolate(fd.as_vector(f_exp))
@@ -73,10 +65,6 @@ class Optimal_Control_Wave_Equation:
        def Build_g(self):
               self.g = fd.Function(self.FunctionSpace)
               g_exp = []
-              if self.dim == 2:
-                     for i in range(self.N - 1): # need to be changed
-                            g_exp.append((fd.exp(i*self.dtc) + fd.Function(self.R).assign(2.0) 
-                                          + 2*fd.pi**2*(i*self.dtc-self.T)**2) * fd.sin(fd.pi*self.x) * fd.sin(fd.pi*self.y))
               if self.dim == 1:
                      for i in range(1, self.N + 1):
                             g_exp.append(self.dtc**2 *(2 * (2*fd.exp(2*i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)+i*self.dtc)) * fd.sin(fd.pi*self.x)
@@ -86,133 +74,140 @@ class Optimal_Control_Wave_Equation:
 
 
        def Build_Initial_Condition(self):
-              if self.dim == 2:
-                     self.u_0 = fd.Function(self.CG1).interpolate(fd.sin(fd.pi * self.x)*fd.sin(fd.pi * self.y))
-                     self.u_1 = fd.Function(self.CG1).interpolate(fd.sin(fd.pi * self.x)*fd.sin(fd.pi * self.y))
               if self.dim == 1:
                      self.u_0 = fd.Function(self.CG1).interpolate(fd.sin(fd.pi * self.x))
                      self.u_1 = fd.Function(self.CG1).interpolate(fd.Function(self.R).assign(0.0))
 
 
-       def Build_Action(self): # TODO : Check the indexing and coefficient! DONE at 18/1
-              for i in range(self.N-1): # loop over 0 to N-2
-                     if i == 0:
-                            unm1 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc #Changed here
-                            unm2 = self.u_0
-                     elif i == 1:
-                            unm1 = self.u[0]
-                            unm2 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc
-                     else:
-                            unm1 = self.u[i-1]
-                            unm2 = self.u[i-2]
-                     if i == self.N-2:
-                            pnp1 = fd.Function(self.R).assign(0.0)
-                     else:
-                            pnp1 = self.p[i+1]
-                     un = self.u[i]
-                     pn = self.p[i]
-                     u_tiln =  pn / self.gamma
-                     u_bar = (un + unm2) / 2
+       # def Build_Action(self):
+       #        for i in range(self.N-1): # loop over 0 to N-2
+       #               if i == 0:
+       #                      unm1 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc #Changed here
+       #                      unm2 = self.u_0
+       #               elif i == 1:
+       #                      unm1 = self.u[0]
+       #                      unm2 = self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc
+       #               else:
+       #                      unm1 = self.u[i-1]
+       #                      unm2 = self.u[i-2]
+       #               if i == self.N-2:
+       #                      pnp1 = fd.Function(self.R).assign(0.0)
+       #               else:
+       #                      pnp1 = self.p[i+1]
+       #               un = self.u[i]
+       #               pn = self.p[i]
+       #               u_tiln =  pn / self.gamma
+       #               u_bar = (un + unm2) / 2
 
-                     fn = self.f[i] # TODO:doubt?
-                     gn = self.g[i]
+       #               fn = self.f[i] # TODO:doubt?
+       #               gn = self.g[i]
 
-                     L_g = 1 / 2 * fd.inner((un-gn), (un-gn)) * fd.dx
-                     L_u_til = self.gamma / 2 * fd.inner(u_tiln, u_tiln) * fd.dx
-                     L_p = fd.inner(((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln), pn) * fd.dx
-                     L_p += fd.inner(fd.grad(pn), fd.grad(u_bar)) * fd.dx
+       #               L_g = 1 / 2 * fd.inner((un-gn), (un-gn)) * fd.dx
+       #               L_u_til = self.gamma / 2 * fd.inner(u_tiln, u_tiln) * fd.dx
+       #               L_p = fd.inner(((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln), pn) * fd.dx
+       #               L_p += fd.inner(fd.grad(pn), fd.grad(u_bar)) * fd.dx
 
-                     # L_g = self.dtc / 2 * (un - gn)**2 * fd.dx
-                     # L_u_til = self.gamma / 2 * self.dtc * u_tiln**2 * fd.dx
-                     # L_p = self.dtc * pn * ((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln) * fd.dx
-                     # L_p += self.dtc * fd.dot(fd.grad(pn), fd.grad(u_bar)) * fd.dx
+       #               # L_g = self.dtc / 2 * (un - gn)**2 * fd.dx
+       #               # L_u_til = self.gamma / 2 * self.dtc * u_tiln**2 * fd.dx
+       #               # L_p = self.dtc * pn * ((un - 2 * unm1 + unm2) / (self.dtc ** 2) - fn - u_tiln) * fd.dx
+       #               # L_p += self.dtc * fd.dot(fd.grad(pn), fd.grad(u_bar)) * fd.dx
 
-                     L = L_g + L_u_til + L_p
-                     if i == 0:
-                            S_g = L_g
-                            S_til = L_u_til
-                            S_p = L_p
-                            S = L
-                     else:
-                            S_g += L_g
-                            S_til += L_u_til
-                            S_p += L_p
-                            S += L
-              self.S = S
-              self.S_g = S_g
-              self.S_til = S_til
-              self.S_p = S_p
+       #               L = L_g + L_u_til + L_p
+       #               if i == 0:
+       #                      S_g = L_g
+       #                      S_til = L_u_til
+       #                      S_p = L_p
+       #                      S = L
+       #               else:
+       #                      S_g += L_g
+       #                      S_til += L_u_til
+       #                      S_p += L_p
+       #                      S += L
+       #        self.S = S
+       #        self.S_g = S_g
+       #        self.S_til = S_til
+       #        self.S_p = S_p
 
 
        def Build_LHS(self):
-              scale = fd.sqrt(self.gamma) # This is used for rescaling
-              # build up the set of equations
+              scale = fd.sqrt(self.gamma) # used for pc
               for i in range(self.N): # loop over 0 to N-1
-                     # if i == 0:
-                     #        if pc:
-                     #               unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) * scale #Changed here
-                     #        else:
-                     #               unm1 = (self.u_0 * fd.cos(self.T / self.N * fd.pi) + self.u_1 * self.dtc) #Changed here
-                     #        unm2 = self.u_0 * scale
-                     if i == 1:
+                     un = self.u[i]
+                     pn = self.p[i]
+                     if i == 1: #TODO: i=0 case is separated
                             unm1 = self.u[0]
                             if pc:
                                    unm2 = self.u_0  * scale
                             else:
                                    unm2 = self.u_0
+                     elif i == 0:
+                            unm1 = fd.Constant(0)
+                            unm2 = fd.Constant(0)
                      else:
                             unm1 = self.u[i-1]
                             unm2 = self.u[i-2]
-                     # if i == self.N-2:
-                     #        pnp1 = fd.Function(self.R).assign(0.0)
-                     #        pnp2 = fd.Function(self.R).assign(0.0)
-                     # elif i == self.N-3:
-                     #        pnp1 = self.p[i+1]
-                     #        pnp2 = fd.Function(self.R).assign(0.0)
-                     
-                     pnm1 = self.p[i-1]
-                     pnp1 = self.p[i+1]
-                     un = self.u[i]
-                     pn = self.p[i]
+                     if i == self.N - 2: #TODO: i = N-1 case is separated
+                            pnp2 = fd.Constant(0)
+                            pnp1 = self.p[self.N - 1]
+                     elif i == self.N - 1:
+                            pnp2 = fd.Constant(0)
+                            pnp1 = fd.Constant(0)
+                     else:
+                            pnp1 = self.p[i+1]
+                            pnp2 = self.p[i+2]
+
 
                      if i == 0:
                             if pc:
-                                   Lu_0 = fd.inner(scale * un, self.v[i]) * fd.dx
-                                   Lu_0 += fd.inner(self.dtc**2 / 2 * scale * fd.grad(un), fd.grad(self.v[i])) * fd.dx
-                                   Lu_0 += - self.dtc**2 / 2 / scale * pn
+                                   Lu = fd.inner(scale * un, self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 / 2 * scale * fd.grad(un), fd.grad(self.v[i])) * fd.dx
+                                   Lu += fd.inner(- self.dtc**2 / 2 / scale * pn, self.v[i]) * fd.dx
+                                   
+                                   Lp = fd.inner(self.dtc**2 * un / scale, self.w[i]) * fd.dx
+                                   Lp += fd.inner((pn-2*pnp1+pnp2), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
                             else:
-                                   Lu_0 = fd.inner(un, self.v[i]) * fd.dx
-                                   Lu_0 += fd.inner(self.dtc**2 / 2 * fd.grad(un), fd.grad(self.v[i])) * fd.dx
-                                   Lu_0 += - self.dtc**2 / 2 / self.gamma * pn
+                                   Lu = fd.inner(un, self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 / 2 * fd.grad(un), fd.grad(self.v[i])) * fd.dx
+                                   Lu += fd.inner(- self.dtc**2 / 2 / self.gamma * pn, self.v[i]) * fd.dx
+                                   
+                                   Lp = fd.inner(self.dtc**2 * un, self.w[i]) * fd.dx
+                                   Lp += fd.inner((pn-2*pnp1+pnp2), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
 
                      elif i == self.N - 1:
                             if pc:
-                                   Lp_Nm1 = fd.inner(pn, self.w[i]) * fd.dx
-                                   Lp_Nm1 += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
-                                   Lp_Nm1 += self.dtc**2 / 2 * un * scale
+                                   Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / scale), self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2) * scale, fd.grad(self.v[i])) * fd.dx
+                                   
+                                   Lp = fd.inner(pn, self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 / 2 * un * scale, self.w[i]) * fd.dx
                             else:
-                                   Lp_Nm1 = fd.inner(pn, self.w[i]) * fd.dx
-                                   Lp_Nm1 += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
-                                   Lp_Nm1 += self.dtc**2 / 2 * un
+                                   Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / self.gamma), self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
+
+                                   Lp = fd.inner(pn, self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 / 2 * un, self.w[i]) * fd.dx
 
                      else:
                             if pc:
                                    Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / scale), self.v[i]) * fd.dx
-                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2) * scale, fd.grad(self.v[i])) * fd.dx #TODO: Scale!!!
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2) * scale, fd.grad(self.v[i])) * fd.dx
+
                                    Lp = fd.inner(self.dtc**2 * un / scale, self.w[i]) * fd.dx
-                                   Lp += fd.inner((pnm1-2*pn+pnp1), self.w[i]) * fd.dx
-                                   Lp += fd.inner(self.dtc**2 * fd.grad((pnm1+pnp1)/2), fd.grad(self.w[i])) * fd.dx
+                                   Lp += fd.inner((pn-2*pnp1+pnp2), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
                             else:
                                    Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / self.gamma), self.v[i]) * fd.dx
                                    Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
-                                   Lp = fd.inner(self.dtc**2 * un, self.w[i]) * fd.dx
-                                   Lp += fd.inner((pnm1-2*pn+pnp1), self.w[i]) * fd.dx
-                                   Lp += fd.inner(self.dtc**2 * fd.grad((pnm1+pnp1)/2), fd.grad(self.w[i])) * fd.dx
 
+                                   Lp = fd.inner(self.dtc**2 * un, self.w[i]) * fd.dx
+                                   Lp += fd.inner((pn-2*pnp1+pnp2), self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 * fd.grad((pn+pnp2)/2), fd.grad(self.w[i])) * fd.dx
                      if i == 0:
-                            LHS = Lu_0
-                     elif i == self.N - 1:
-                            LHS += Lp_Nm1
+                            LHS = Lu+Lp
                      else:
                             LHS += Lu + Lp
 
@@ -227,17 +222,13 @@ class Optimal_Control_Wave_Equation:
                      if i == 0:
                             Lu = fd.inner(self.dtc**2 * (1/2 * fn + self.u_1 /self.dtc + self.u_0 /self.dtc**2),self.v[i]) * fd.dx
                             Lp = fd.inner(gn, self.w[i]) * fd.dx
-                     elif i == 1:
-                            Lu = fd.inner(self.dtc**2* self.f[i], self.v[i]) * fd.dx
-                            Lu -= fd.inner(self.u_0, self.v[i]) * fd.dx
-                            Lu -= fd.inner(fd.grad(self.u_0)/2, fd.grad(self.v[i])) * fd.dx
-                            Lp = fd.inner(gn, self.w[i]) * fd.dx
                      elif i == self.N - 1:
-                            Lu = fd.inner(fn, self.v[i]) * fd.dx
-                            Lp = fd.inner(1/2 * gn, self.w[i]) * fd.dx
+                            Lu = fd.inner(self.dtc**2 * fn, self.v[i]) * fd.dx
+                            Lp = fd.inner(self.dtc**2 * 1/2 * gn, self.w[i]) * fd.dx
                      else:
-                            Lu = fd.inner(fn, self.v[i]) * fd.dx
-                            Lp = fd.inner(gn, self.w[i]) * fd.dx
+                            Lu = fd.inner(self.dtc**2 * fn, self.v[i]) * fd.dx
+                            Lp = fd.inner(self.dtc**2 * gn, self.w[i]) * fd.dx
+
                      if i == 0:
                             RHS = Lu + Lp
                      else:
@@ -245,28 +236,22 @@ class Optimal_Control_Wave_Equation:
               self.RHS = RHS
 
        def solve(self, parameters=None, complex=False):
-              if parameters: # set the solver parameter
+              if parameters: # set the solver parameter pc
                      params = parameters
               else:
                      params = {'ksp_type': 'preonly', 'pc_type': 'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
 
-              if complex: #TODO: build the complete equation, do not use fd.derivative()
+              if complex: # build the complete equation, do not use fd.derivative()
                      self.Build_f()
                      self.Build_g()
                      self.Build_Initial_Condition()
                      self.Build_LHS()
                      self.Build_RHS()
 
-
                      prob_up = fd.NonlinearVariationalProblem(self.LHS-self.RHS, self.U, bcs=self.bcs)
                      solv_up = fd.NonlinearVariationalSolver(prob_up, solver_parameters=params)
-                     #prob_up = fd.LinearVariationalProblem(self.LHS, self.RHS, self.U, bcs=self.bcs)
-                     #solv_up = fd.LinearVariationalSolver(prob_up, solver_parameters=params)
-
                      solv_up.solve()
                      u_sol, p_sol = self.U.subfunctions
-
-
 
               else: #TODO: solve the real version problem directly without pc.
                      self.Build_f()
