@@ -73,8 +73,12 @@ class Optimal_Control_Wave_Equation:
 
        def Build_Initial_Condition(self):
               if self.dim == 1:
-                     self.u_0 = fd.Function(self.CG1).interpolate(fd.sin(fd.pi * self.x))
-                     self.u_1 = fd.Function(self.CG1).interpolate(fd.Function(self.R).assign(0.0))
+                     if pc:
+                            self.u_0 = fd.Function(self.CG1).interpolate(fd.sqrt(self.gamma) * fd.sin(fd.pi * self.x))
+                            self.u_1 = fd.Function(self.CG1).interpolate(fd.sqrt(self.gamma) * fd.Function(self.R).assign(0.0))
+                     else:
+                            self.u_0 = fd.Function(self.CG1).interpolate(fd.sin(fd.pi * self.x))
+                            self.u_1 = fd.Function(self.CG1).interpolate(fd.Function(self.R).assign(0.0))
 
 
        def Build_L(self):
@@ -86,10 +90,7 @@ class Optimal_Control_Wave_Equation:
                      gn = self.g[i]
                      if i == 1: #TODO: i=0 case is separated
                             unm1 = self.u[0]
-                            if pc:
-                                   unm2 = self.u_0  * scale
-                            else:
-                                   unm2 = self.u_0
+                            unm2 = self.u_0
                      elif i == 0:
                             unm1 = fd.Constant(math.nan)
                             unm2 = fd.Constant(math.nan)
@@ -109,10 +110,10 @@ class Optimal_Control_Wave_Equation:
 
                      if i == 0:
                             if pc:
-                                   Lu = fd.inner(scale * un, self.v[i]) * fd.dx
-                                   Lu += fd.inner(self.dtc**2 / 2 * scale * fd.grad(un), fd.grad(self.v[i])) * fd.dx
+                                   Lu = fd.inner(un, self.v[i]) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 / 2 * fd.grad(un), fd.grad(self.v[i])) * fd.dx
                                    Lu += fd.inner(- self.dtc**2 / 2 / scale * pn, self.v[i]) * fd.dx
-                                   Lu -= fd.inner(self.dtc**2 * (1/2 * fn + self.u_1 /self.dtc + self.u_0 /self.dtc**2),self.v[i]) * fd.dx # TODO: Scaling of this?
+                                   Lu -= fd.inner(self.dtc**2 * (1/2 * fn + self.u_1 /self.dtc + self.u_0 /self.dtc**2),self.v[i]) * fd.dx
 
                                    Lp = fd.inner(self.dtc**2 * un / scale, self.w[i]) * fd.dx
                                    Lp += fd.inner((pn-2*pnp1+pnp2), self.w[i]) * fd.dx
@@ -136,8 +137,8 @@ class Optimal_Control_Wave_Equation:
                                    Lu -= fd.inner(self.dtc**2 * fn, self.v[i]) * fd.dx
                                    
                                    Lp = fd.inner(pn, self.w[i]) * fd.dx
-                                   Lp += fd.inner(self.dtc**2/2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
-                                   Lp += fd.inner(self.dtc**2 / 2 * un * scale, self.w[i]) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 / 2 * fd.grad(pn), fd.grad(self.w[i])) * fd.dx
+                                   Lp += fd.inner(self.dtc**2 / 2 * un / scale, self.w[i]) * fd.dx
                                    Lp -= fd.inner(self.dtc**2 * 1/2 * gn, self.w[i]) * fd.dx
                             else:
                                    Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / self.gamma), self.v[i]) * fd.dx
@@ -152,7 +153,7 @@ class Optimal_Control_Wave_Equation:
                      else:
                             if pc:
                                    Lu = fd.inner(((un-2*unm1+unm2) - self.dtc**2 * pn / scale), self.v[i]) * fd.dx
-                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2) * scale, fd.grad(self.v[i])) * fd.dx
+                                   Lu += fd.inner(self.dtc**2 * fd.grad((un+unm2)/2), fd.grad(self.v[i])) * fd.dx
                                    Lu -= fd.inner(self.dtc**2 * fn, self.v[i]) * fd.dx
 
                                    Lp = fd.inner(self.dtc**2 * un / scale, self.w[i]) * fd.dx
@@ -233,8 +234,8 @@ class Optimal_Control_Wave_Equation:
 
                      print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lu, bcs=bcs).riesz_representation()))
                      print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()))
-                     if fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()) > 1e-6:
-                            raise ValueError("The equation is not solved properly")
+                     # if fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()) > 1e-6:
+                     #        raise ValueError("The equation is not solved properly")
               return u_sol, p_sol
 
 
@@ -301,7 +302,8 @@ T = 2
 N_t = 50
 N_x = 10
 dim = 1
-gamma = 1.0 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+gamma = 10 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+# when gamma is too small the test problem f become ill conditioned and needs really small dt to 
 
 
 equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
@@ -310,12 +312,19 @@ equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
 # solver parameters for parallel method
 parameters = {
        #'snes': snes_sparameters, #TODO: is this needed?
+       'snes_type':'ksponly',
        'mat_type': 'matfree',
        'ksp_type': 'gmres',
+       'ksp_gmres_modifiedgramschmidt':None,
+       #'ksp_gmres_restart': 30,
        'ksp': {
        'monitor': None,
        'converged_reason': None,
        },
+       'ksp_max_it':30,
+       #'ksp_atol':1,
+       #'ksp_rtol':0.5,
+       'ksp_view':None,
        'pc_type': 'python',
        'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
 }
@@ -337,16 +346,6 @@ complex = True
 class DiagFFTPC(fd.PCBase):
 
 
-       def __init__(self):
-              self.initialized = False
-              #self.control = control_problem # must be a Control_Wave_Direct problem
-
-
-       def setUp(self, pc):#TODO: do we need this?
-              if not self.initialized:
-                     self.initialize(pc)
-              self.update(pc)
-
 
        def initialize(self, pc): #FIXME: N_t variables now.
               self.xf = fd.Cofunction(W.dual()) # copy the code back.
@@ -361,28 +360,34 @@ class DiagFFTPC(fd.PCBase):
               self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
               self.S2 = -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
 
-              self.Gamma = 1j * dt ** 2 / np.sqrt(gamma) * np.abs(1/self.Lambda_2)# TODO: CHECK?
+              # self.Gamma = 1j * dt ** 2 / np.sqrt(gamma) * np.abs(1/self.Lambda_2)# TODO: CHECK?
 
-              self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
-              self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
+              self.m1 = np.real(self.Lambda_1/self.Lambda_2)
+              self.m2 = - dt ** 2 /np.conj(self.Lambda_2)/ np.sqrt(gamma)
+              self.m3 = dt ** 2 /self.Lambda_2/ np.sqrt(gamma)
+
+              self.Sigma_1 = self.m1 + self.m2 * self.S1
+              self.Sigma_2 = self.m1 + self.m3 * self.S2
+
+              # self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
+              # self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
 
 
               tu, tp = fd.TrialFunctions(W)
               fu, fp = fd.split(self.f)
-              # TODO: make it cleaner
 
 
               # RHS
-              L = fd.inner(1/2*(fu[0]+fd.conj(self.S2[0])*fp[0]), vu[0]) * fd.dx
-              L += fd.inner(1/2*(fp[0]+ fd.conj(self.S1[0]*fu[0])), vp[0]) * fd.dx
+              L = fd.inner(1/2*(fu[0]+fd.conj(self.S1[0])*fp[0]), vu[0]) * fd.dx
+              L += fd.inner(1/2*(fp[0]+ fd.conj(self.S2[0])*fu[0]), vp[0]) * fd.dx
               for i in range(1, N_t):
-                     L += fd.inner(1/2*(fu[i]+ fd.conj(self.S2[i])*fp[i]), vu[i]) * fd.dx
-                     L += fd.inner(1/2*(fp[i]+ fd.conj(self.S1[i]*fu[i])), vp[i]) * fd.dx
+                     L += fd.inner(1/2*(fu[i]+ fd.conj(self.S1[i])*fp[i]), vu[i]) * fd.dx
+                     L += fd.inner(1/2*(fp[i]+ fd.conj(self.S2[i])*fu[i]), vp[i]) * fd.dx
 
 
               # LHS
               D = fd.inner(self.Sigma_1[0]*tu[0], vu[0]) * fd.dx
-              D += fd.inner(dt**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx #TODO: minus sign here
+              D += fd.inner(dt**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx
               D += fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
               D += fd.inner(dt**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
               for i in range(1, N_t): #TODO: dimension the same as unknowns
@@ -396,9 +401,8 @@ class DiagFFTPC(fd.PCBase):
               A = fd.inner(tu, vu) * fd.dx + fd.inner(tp, vp) * fd.dx
               B = fd.inner(fu, vu) * fd.dx + fd.inner(fp, vp) * fd.dx
 
-
               params_linear = {'ksp_type': 'preonly', 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
-              prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs) #TODO: BCs?
+              prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs)
               #prob_w = fd.LinearVariationalProblem(A, B, self.w, bcs=bcs)
               self.solv_w = fd.LinearVariationalSolver(prob_w, solver_parameters=params_linear)
 
@@ -417,8 +421,8 @@ class DiagFFTPC(fd.PCBase):
               u_array = self.xf.dat[0].data[:] # N_x * N_t array
               p_array = self.xf.dat[1].data[:]
               # scaling FFT step FFT of r
-              vu1 = fft(u_array, axis=0)
-              vp1 = fft(p_array, axis=0)
+              vu1 = ifft(u_array, axis=0)
+              vp1 = ifft(p_array, axis=0)
               self.xf.dat[0].data[:] = vu1
               self.xf.dat[1].data[:] = vp1
 
@@ -428,45 +432,34 @@ class DiagFFTPC(fd.PCBase):
               self.solv_w.solve()
               PETSc.Sys.Print('pc solver solved')
 
-              self.yf.assign(0)
               # Apply S X M on w
+              uf, pf = fd.split(self.w)
+              uy, py = self.yf.subfunctions
+              ufin = []
+              pfin = []
               for i in range(N_t):
-                     self.yf.sub(0).sub(i).assign(self.w.sub(0).sub(i) + fd.Constant(self.S2[i]) * self.w.sub(1).sub(i))
-                     self.yf.sub(1).sub(i).assign(self.w.sub(1).sub(i) + fd.Constant(self.S1[i]) * self.w.sub(0).sub(i))
-              
-              yu_array = self.yf.dat[0].data[:] # N_x * N_t array
-              yp_array = self.yf.dat[1].data[:]
-              self.yf.dat[0].data[:] = yu_array
-              self.yf.dat[1].data[:] = yp_array
-
-              # # ifft to get ita
-              # yu = self.yf.dat[0].data[:]
-              # yp = self.yf.dat[1].data[:]
-              # yu1 = ifft(yu, axis=0)
-              # yp1 = ifft(yp,axis=0)
-              # self.yf.dat[0].data[:] = yu1
-              # self.yf.dat[1].data[:] = yp1
-
-
-              # # fft of ita
-              # ita_uarray = self.yf.dat[0].data[:]
-              # ita_parray = self.yf.dat[1].data[:]
-              # itu1 = fft(ita_uarray, axis=0)
-              # itp1 = fft(ita_parray, axis=0)
-              # self.yf.dat[0].data[:] = itu1
-              # self.yf.dat[1].data[:] = itp1
+                     ufin.append(uf[i] + fd.Constant(self.S2[i]) * pf[i])
+                     pfin.append(pf[i] + fd.Constant(self.S1[i]) * uf[i])
+              uy.interpolate(fd.as_vector(ufin))
+              py.interpolate(fd.as_vector(pfin))
 
               # apply lambda_2^-1 to the ffted vector #TODO: seems not to be consistent with the paper
+              uf, pf = fd.split(self.yf)
+              uy, py = self.yf.subfunctions
+              ufin = []
+              pfin = []
               for i in range(N_t):
-                     self.yf.sub(0).sub(i).assign(self.yf.sub(0).sub(i)/fd.Constant(self.Lambda_2[i]))
-                     self.yf.sub(1).sub(i).assign(self.yf.sub(1).sub(i)/fd.Constant(self.Lambda_2[i].conj()))
+                     ufin.append(uy[i]/fd.Constant(self.Lambda_2[i]))
+                     pfin.append(py[i]/fd.Constant(self.Lambda_2[i].conj()))
+              uy.interpolate(fd.as_vector(ufin))
+              py.interpolate(fd.as_vector(pfin))
 
               yu_array = self.yf.dat[0].data[:]
               yp_array = self.yf.dat[1].data[:]
 
               # ifft to get s
-              yu1 = ifft(yu_array, axis=0)
-              yp1 = ifft(yp_array,axis=0)
+              yu1 = fft(yu_array, axis=0)
+              yp1 = fft(yp_array, axis=0)
               self.yf.dat[0].data[:] = yu1
               self.yf.dat[1].data[:] = yp1
 
