@@ -207,7 +207,7 @@ class Optimal_Control_Wave_Equation:
                      u0 += dt**2 /2 * fd.inner(grad(u_sol[0]), grad(v)) * fd.dx
                      u0 -= dt**2 /2 / gamma * fd.inner(p_sol[0], v) * fd.dx
                      u0 -= fd.inner(self.u_0 + dt * self.u_1 + dt**2/2 * f[0], v) * fd.dx
-                     print("~~~~~~~~~~~~~~~~~~~~~~", fd.norm(fd.assemble(u0, bcs=bcs).riesz_representation()))
+                     #print("~~~~~~~~~~~~~~~~~~~~~~", fd.norm(fd.assemble(u0, bcs=bcs).riesz_representation()))
                      
 
 
@@ -232,17 +232,17 @@ class Optimal_Control_Wave_Equation:
                      Lp += fd.inner(dt**2 * grad((pn+pnp2)/2), grad(w)) * fd.dx
                      Lp -= fd.inner(dt**2 * gn, w) * fd.dx
 
-                     print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lu, bcs=bcs).riesz_representation()))
-                     print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()))
+                     #print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lu, bcs=bcs).riesz_representation()))
+                     #print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()))
                      # if fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()) > 1e-6:
                      #        raise ValueError("The equation is not solved properly")
               return u_sol, p_sol
 
 
-       def write(self, u_sol, p_sol): # TODO: check this: DONE at 28/1
+       def write(self, u_sol, p_sol, name="pc"): # TODO: check this: DONE at 28/1
               # WRITE SOLUTION
               if self.dim == 1:
-                     sol_file = VTKFile('sol_1d.pvd')
+                     sol_file = VTKFile('sol_1d_'+name+'.pvd')
                      ana_file = VTKFile('ana_1d.pvd')
               elif self.dim == 2:
                      sol_file = VTKFile('sol_2d.pvd')
@@ -255,7 +255,7 @@ class Optimal_Control_Wave_Equation:
               g_out = fd.Function(self.CG1, name='g_out')
               # Test
               fa = fd.Function(self.CG1)
-              print('!!!',fd.norm(u_sol - self.g)) # if gamma is small, that should tend to 0
+              #print('!!!',fd.norm(u_sol - self.g)) # if gamma is small, that should tend to 0
               
               for i in range(self.N+1): # loop over all time from t=0 to t=T
                      if i == 0:
@@ -285,9 +285,10 @@ class Optimal_Control_Wave_Equation:
                      #print(i)
                      # TODO: test for f = 0
                      if i < self.N-1:
-                            print("error for f=0", fd.norm(p_out - self.gamma * fd.Function(self.CG1).interpolate(self.f_exp[i]) + p_ana)/fd.norm(p_out))
+                            pass
+                            #print("error for f=0", fd.norm(p_out - self.gamma * fd.Function(self.CG1).interpolate(self.f_exp[i]) + p_ana)/fd.norm(p_out))
                      # TODO: test for relative error for true problem.
-                     print("Relative Error in u,p is", [fd.norm(u_out-u_ana) / fd.norm(u_ana), fd.norm(p_out-p_ana) / fd.norm(p_ana)])
+                     #print("Relative Error in u,p is", [fd.norm(u_out-u_ana) / fd.norm(u_ana), fd.norm(p_out-p_ana) / fd.norm(p_ana)])
                      if i < self.N - 1:
                             pass
                             # print(fd.cos(fd.pi * i *self.dtc))
@@ -299,10 +300,10 @@ class Optimal_Control_Wave_Equation:
 
 # the control test problem
 T = 2
-N_t = 50
-N_x = 10
+N_t = 18
+N_x = 20
 dim = 1
-gamma = 10 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+gamma = 1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
 # when gamma is too small the test problem f become ill conditioned and needs really small dt to 
 
 
@@ -313,18 +314,17 @@ equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
 parameters = {
        #'snes': snes_sparameters, #TODO: is this needed?
        'snes_type':'ksponly',
-       'mat_type': 'matfree',
+       #'mat_type': 'matfree',
        'ksp_type': 'gmres',
        'ksp_gmres_modifiedgramschmidt':None,
-       #'ksp_gmres_restart': 30,
+       'ksp_gmres_restart': 300,
        'ksp': {
-       'monitor': None,
-       'converged_reason': None,
+              'monitor': None,
+              'converged_reason': None,
        },
-       'ksp_max_it':30,
+       'ksp_max_it':1000,
        #'ksp_atol':1,
-       #'ksp_rtol':0.5,
-       'ksp_view':None,
+       #'ksp_rtol':1.0e-2,
        'pc_type': 'python',
        'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
 }
@@ -332,6 +332,7 @@ parameters = {
 # setup variables that we wish to use in the pc class.
 V = equ.FunctionSpace
 W = equ.MixedSpace # W = V*V
+bigv = fd.TestFunction(W)
 vu = equ.v # test function space for u
 vp = equ.w # test function space for p
 dt = equ.dt
@@ -357,43 +358,89 @@ class DiagFFTPC(fd.PCBase):
               self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/ N_t * np.arange(N_t)) + np.exp(4j*np.pi/(N_t) * np.arange(N_t))
               self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
 
-              self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
-              self.S2 = -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
+              # Colin's checks ========================
+              # checking 
+              
+              #self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
+              #self.S2 = -self.S1.conj() # -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
 
-              # self.Gamma = 1j * dt ** 2 / np.sqrt(gamma) * np.abs(1/self.Lambda_2)# TODO: CHECK?
+              m1 = self.Lambda_1/self.Lambda_2
+              m2 = - dt ** 2 /np.conj(self.Lambda_2)/ np.sqrt(gamma)
+              m3 = dt ** 2 /self.Lambda_2/ np.sqrt(gamma)
 
-              self.m1 = np.real(self.Lambda_1/self.Lambda_2)
-              self.m2 = - dt ** 2 /np.conj(self.Lambda_2)/ np.sqrt(gamma)
-              self.m3 = dt ** 2 /self.Lambda_2/ np.sqrt(gamma)
+              self.S1 = np.sqrt(m3/m2)
+              self.S2 = -self.S1.conj()
+              self.S11 = 0.*self.S1
+              self.S12 = 0.*self.S1
+              self.S21 = 0.*self.S1
+              self.S22 = 0.*self.S1
+              self.SI11 = 0.*self.S1
+              self.SI12 = 0.*self.S1
+              self.SI21 = 0.*self.S1
+              self.SI22 = 0.*self.S1
+              
+              Sigma_1 = m1 + m2 * self.S1
+              Sigma_2 = m1 + m3 * self.S2
 
-              self.Sigma_1 = self.m1 + self.m2 * self.S1
-              self.Sigma_2 = self.m1 + self.m3 * self.S2
+              # checking diagonalisation
+              for i in range(Sigma_1.size):
+                     l1 = self.Lambda_1[i]
+                     l2 = self.Lambda_2[i]
+                     Lambda = np.array([[l1/l2, -dt**2/np.sqrt(gamma)/l2.conj()],
+                                        [dt**2/np.sqrt(gamma)/l2, l1.conj()/l2.conj()]])
 
-              # self.Sigma_1 = self.Lambda_1 / self.Lambda_2 + self.Gamma
-              # self.Sigma_2 = self.Lambda_1 / self.Lambda_2 - self.Gamma
+                     e, v = np.linalg.eig(Lambda)
+                     Sigma_1[i] = e[0]
+                     Sigma_2[i] = e[1]
+                     S = v
+                     Sinv = np.linalg.inv(S)
 
+                     self.S11[i]= S[0,0]
+                     self.S12[i] = S[0,1]
+                     self.S21[i] = S[1,0]
+                     self.S22[i] = S[1,1]
+                     self.SI11[i] = Sinv[0,0]
+                     self.SI12[i] = Sinv[0,1]
+                     self.SI21[i] = Sinv[1,0]
+                     self.SI22[i] = Sinv[1,1]
+                     
+                     Sigma = np.array([[e[0], 0], [0, e[1]]])
+                     assert( np.linalg.norm(S@Sigma@Sinv - Lambda) < 1.0e-8)
+              # =====================================================
 
               tu, tp = fd.TrialFunctions(W)
               fu, fp = fd.split(self.f)
 
 
               # RHS
-              L = fd.inner(1/2*(fu[0]+fd.conj(self.S1[0])*fp[0]), vu[0]) * fd.dx
-              L += fd.inner(1/2*(fp[0]+ fd.conj(self.S2[0])*fu[0]), vp[0]) * fd.dx
+              SI11c = fd.Constant(self.SI11[0])
+              SI12c = fd.Constant(self.SI12[0])
+              SI21c = fd.Constant(self.SI21[0])
+              SI22c = fd.Constant(self.SI22[0])
+              L =  fd.inner(SI11c*fu[0]+SI12c*fp[0], vu[0]) * fd.dx
+              L += fd.inner(SI21c*fu[0]+ SI22c*fp[0], vp[0]) * fd.dx
               for i in range(1, N_t):
-                     L += fd.inner(1/2*(fu[i]+ fd.conj(self.S1[i])*fp[i]), vu[i]) * fd.dx
-                     L += fd.inner(1/2*(fp[i]+ fd.conj(self.S2[i])*fu[i]), vp[i]) * fd.dx
-
+                     SI11c = fd.Constant(self.SI11[i])
+                     SI12c = fd.Constant(self.SI12[i])
+                     SI21c = fd.Constant(self.SI21[i])
+                     SI22c = fd.Constant(self.SI22[i])
+                     L += fd.inner(SI11c*fu[i]+ SI12c*fp[i], vu[i]) * fd.dx
+                     L += fd.inner(SI21c*fu[i]+ SI22c*fp[i], vp[i]) * fd.dx
 
               # LHS
-              D = fd.inner(self.Sigma_1[0]*tu[0], vu[0]) * fd.dx
+              Sig1 = fd.Constant(Sigma_1[0])
+              Sig2 = fd.Constant(Sigma_2[0])
+              D = fd.inner(Sig1*tu[0], vu[0]) * fd.dx
               D += fd.inner(dt**2/2 * fd.grad(tu[0]),fd.grad(vu[0])) * fd.dx
-              D += fd.inner(self.Sigma_2[0]*tp[0], vp[0]) * fd.dx
+              D += fd.inner(Sig2*tp[0], vp[0]) * fd.dx
               D += fd.inner(dt**2/2 * fd.grad(tp[0]),fd.grad(vp[0])) * fd.dx
               for i in range(1, N_t): #TODO: dimension the same as unknowns
-                     D += fd.inner(self.Sigma_1[i]*tu[i], vu[i]) * fd.dx
+                     Sig1 = fd.Constant(Sigma_1[i])
+                     Sig2 = fd.Constant(Sigma_2[i])
+
+                     D += fd.inner(Sig1*tu[i], vu[i]) * fd.dx
                      D += fd.inner(dt**2/2 * fd.grad(tu[i]),fd.grad(vu[i])) * fd.dx
-                     D += fd.inner(self.Sigma_2[i]*tp[i], vp[i]) * fd.dx
+                     D += fd.inner(Sig2*tp[i], vp[i]) * fd.dx
                      D += fd.inner(dt**2/2 * fd.grad(tp[i]),fd.grad(vp[i])) * fd.dx
 
 
@@ -401,6 +448,7 @@ class DiagFFTPC(fd.PCBase):
               A = fd.inner(tu, vu) * fd.dx + fd.inner(tp, vp) * fd.dx
               B = fd.inner(fu, vu) * fd.dx + fd.inner(fp, vp) * fd.dx
 
+              params_linear = {'ksp_type': 'gmres', 'ksp_monitor': None, 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
               params_linear = {'ksp_type': 'preonly', 'pc_type':'lu', 'mat_type': 'aij', 'pc_factor_mat_solver_type': 'mumps'}
               prob_w = fd.LinearVariationalProblem(D, L, self.w, bcs=bcs)
               #prob_w = fd.LinearVariationalProblem(A, B, self.w, bcs=bcs)
@@ -412,25 +460,30 @@ class DiagFFTPC(fd.PCBase):
 
 
        def apply(self, pc, x, y):
-              PETSc.Sys.Print('applying')
+              #PETSc.Sys.Print('applying')
               with self.xf.dat.vec_wo as v: # vector write only mode to ensure communication.
                      x.copy(v)
-              
+
               #TODO: Why is it self.xf here? where is x
               #x_array = self.xf.dat.data # 2*N_x * N_t tensor
               u_array = self.xf.dat[0].data[:] # N_x * N_t array
               p_array = self.xf.dat[1].data[:]
+              
               # scaling FFT step FFT of r
-              vu1 = ifft(u_array, axis=0)
-              vp1 = ifft(p_array, axis=0)
+              vu1 = ifft(u_array, axis=1)
+              vp1 = ifft(p_array, axis=1)
               self.xf.dat[0].data[:] = vu1
               self.xf.dat[1].data[:] = vp1
 
               # solve D w = 1/2 (S* X M) r = g
               f = self.xf.riesz_representation() # the function within the mixed space
+
+              L = fd.assemble(fd.inner(f,bigv)*fd.dx)
+              L -= self.xf
+
               self.f.assign(f) # pass the copied value
               self.solv_w.solve()
-              PETSc.Sys.Print('pc solver solved')
+              #PETSc.Sys.Print('pc solver solved')
 
               # Apply S X M on w
               uf, pf = fd.split(self.w)
@@ -438,8 +491,13 @@ class DiagFFTPC(fd.PCBase):
               ufin = []
               pfin = []
               for i in range(N_t):
-                     ufin.append(uf[i] + fd.Constant(self.S2[i]) * pf[i])
-                     pfin.append(pf[i] + fd.Constant(self.S1[i]) * uf[i])
+                     S11c = fd.Constant(self.S11[i])
+                     S12c = fd.Constant(self.S12[i])
+                     S21c = fd.Constant(self.S21[i])
+                     S22c = fd.Constant(self.S22[i])
+
+                     ufin.append(S11c*uf[i] + S12c*pf[i])
+                     pfin.append(S21c*uf[i] + S22c*pf[i])
               uy.interpolate(fd.as_vector(ufin))
               py.interpolate(fd.as_vector(pfin))
 
@@ -457,16 +515,17 @@ class DiagFFTPC(fd.PCBase):
               yu_array = self.yf.dat[0].data[:]
               yp_array = self.yf.dat[1].data[:]
 
+              
               # ifft to get s
-              yu1 = fft(yu_array, axis=0)
-              yp1 = fft(yp_array, axis=0)
+              yu1 = fft(yu_array, axis=1)
+              yp1 = fft(yp_array, axis=1)
               self.yf.dat[0].data[:] = yu1
               self.yf.dat[1].data[:] = yp1
 
               with self.yf.dat.vec_ro as v: # read only mode to ensure communication 
                      v.copy(y)
 
-              PETSc.Sys.Print('applyed')
+              #PETSc.Sys.Print('applied')
 
        def applyTranspose(self, pc, x, y):
               raise NotImplementedError
@@ -484,7 +543,7 @@ else:
        if complex:
               # direct version
               u_sol, p_sol = equ.solve(complex=True)
-              equ.write(u_sol, p_sol)
+              equ.write(u_sol, p_sol, name="lu")
        else:
               # direct version
               print("Use Complex mode")
