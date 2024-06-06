@@ -314,17 +314,15 @@ equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
 parameters = {
        #'snes': snes_sparameters, #TODO: is this needed?
        'snes_type':'ksponly',
-       #'mat_type': 'matfree',
+       'mat_type': 'matfree',
        'ksp_type': 'gmres',
-       'ksp_gmres_modifiedgramschmidt':None,
+       #'ksp_gmres_modifiedgramschmidt':None,
        'ksp_gmres_restart': 300,
        'ksp': {
               'monitor': None,
               'converged_reason': None,
        },
        'ksp_max_it':1000,
-       #'ksp_atol':1,
-       #'ksp_rtol':1.0e-2,
        'pc_type': 'python',
        'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
 }
