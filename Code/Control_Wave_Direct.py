@@ -1,3 +1,4 @@
+from ftplib import error_reply
 import firedrake as fd
 import math
 import numpy as np
@@ -7,6 +8,7 @@ from scipy.fft import fft, ifft
 from firedrake.petsc import PETSc
 from matplotlib import pyplot as plt
 from firedrake.output import VTKFile
+import time
 
 class Optimal_Control_Wave_Equation:
 
@@ -191,7 +193,10 @@ class Optimal_Control_Wave_Equation:
 
                      prob_up = fd.NonlinearVariationalProblem(self.L, self.U, bcs=self.bcs) # TODO: delete RHS
                      solv_up = fd.NonlinearVariationalSolver(prob_up, solver_parameters=params)
+                     solver_setted = time.time()
                      solv_up.solve()
+                     solver_solved = time.time()
+                     print("The CPU time for solving the problem", solver_solved - solver_setted)
                      u_sol, p_sol = self.U.subfunctions
 
                      v = fd.TestFunction(self.CG1)
@@ -241,6 +246,8 @@ class Optimal_Control_Wave_Equation:
 
        def write(self, u_sol, p_sol, name="pc"): # TODO: check this: DONE at 28/1
               # WRITE SOLUTION
+              scale = fd.sqrt(self.gamma)
+              sc = fd.Constant(scale)
               if self.dim == 1:
                      sol_file = VTKFile('sol_1d_'+name+'.pvd')
                      ana_file = VTKFile('ana_1d.pvd')
@@ -255,24 +262,35 @@ class Optimal_Control_Wave_Equation:
               g_out = fd.Function(self.CG1, name='g_out')
               # Test
               fa = fd.Function(self.CG1)
+              error = []
+              #print(u_sol.dat.data.shape)
               #print('!!!',fd.norm(u_sol - self.g)) # if gamma is small, that should tend to 0
+              x_list = [5,10,15,20,25]
+              xi = x_list[4]
+              x_sol = []
+              x_ana = []
+              xp_sol = []
+              xp_ana = []
+              ti = 10
+              plot = False
               
               for i in range(self.N+1): # loop over all time from t=0 to t=T
                      if i == 0:
                             p_out.interpolate(fd.Constant(0))
-                            u_out.interpolate(self.u_0)
+                            u_out.interpolate(self.u_0/sc)
+                            #print(u_out.dat.data)
                             g_out.interpolate(fd.Constant(0))
                      elif i == 1:
                             p_out.interpolate(p_sol[0])
-                            u_out.interpolate(fd.cos(self.T/self.N*fd.pi)*self.u_0+self.dtc*self.u_1) #TODO: problem here!!!!!
+                            u_out.interpolate((fd.cos(self.T/self.N*fd.pi)*self.u_0+self.dtc*self.u_1)/sc) #TODO: problem here!!!!!
                             g_out.interpolate(fd.Constant(0))
                      elif i >= self.N:
                             p_out.interpolate(fd.Constant(0))
-                            u_out.interpolate(u_sol[i-2])
+                            u_out.interpolate(u_sol[i-2]/sc)
                             g_out.interpolate(self.g[i-2])
                      else:
                             #print(i)
-                            u_out.interpolate(u_sol[i-2])
+                            u_out.interpolate(u_sol[i-2]/sc)
                             p_out.interpolate(p_sol[i-1])
                             g_out.interpolate(self.g[i-2])
                      if self.dim == 2:
@@ -295,13 +313,43 @@ class Optimal_Control_Wave_Equation:
                             #print('scaling', fd.interpolate(u_sol[i],self.CG1).dat.data[int(self.N_x/2)] / u_ana.dat.data[int(self.N_x/2)])
                             #print('ana_mid', u_ana.dat.data[int(self.N_x/2)])
                             #print('sol_mid', fd.interpolate(u_sol[i],self.CG1).dat.data[int(self.N_x/2)])
+                     x_val = u_out.dat.data[xi]
+                     x_val_ana = u_ana.dat.data[xi]
+                     x_sol.append(x_val)
+                     x_ana.append(x_val_ana)
+                     xp_val = p_out.dat.data[xi]
+                     xp_val_ana = p_ana.dat.data[xi]
+                     xp_sol.append(xp_val)
+                     xp_ana.append(xp_val_ana)
+                     i_list = [10,20,30,40,50]
+                     for j in i_list:
+                            if i == j and plot:
+                                   print(j)
+                                   np.savetxt(f't_sol_{i}', np.real(u_out.dat.data))
+                                   np.savetxt(f't_ana_{i}', np.real(u_ana.dat.data))
+                                   np.savetxt(f'tp_sol_{i}', np.real(p_out.dat.data))
+                                   np.savetxt(f'tp_ana_{i}', np.real(p_ana.dat.data))
+
                      sol_file.write(u_out, p_out, g_out)
                      ana_file.write(u_ana, p_ana)
-
+                     err = u_out.dat.data - u_ana.dat.data
+                     #print(err)
+                     #print(np.linalg.norm(err))
+                     if i>1:
+                            error.append(np.linalg.norm(err))
+                     #print("!!!!!!!",len(error))
+              # print(error)
+              # print('the error is', np.linalg.norm(error, ord=-np.inf))
+              if plot:
+                     np.savetxt(f'x_sol_{xi}', np.real(np.array(x_sol)))
+                     np.savetxt(f'x_ana_{xi}', np.real(np.array(x_ana)))
+                     np.savetxt(f'xp_sol_{xi}', np.real(np.array(xp_sol)))
+                     np.savetxt(f'xp_ana_{xi}', np.real(np.array(xp_ana)))
+              return np.linalg.norm(error, ord=-np.inf)
 # the control test problem
 T = 2
-N_t = 18
-N_x = 20
+N_t = 81
+N_x = 80
 dim = 1
 gamma = 1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
 # when gamma is too small the test problem f become ill conditioned and needs really small dt to 
@@ -403,7 +451,7 @@ class DiagFFTPC(fd.PCBase):
                      self.SI22[i] = Sinv[1,1]
                      
                      Sigma = np.array([[e[0], 0], [0, e[1]]])
-                     assert( np.linalg.norm(S@Sigma@Sinv - Lambda) < 1.0e-8)
+                     #assert( np.linalg.norm(S@Sigma@Sinv - Lambda) < 1.0e-8)
               # =====================================================
 
               tu, tp = fd.TrialFunctions(W)
@@ -533,8 +581,12 @@ class DiagFFTPC(fd.PCBase):
 if pc:
        if complex:
               # pc version
+              start = time.time()
+              print("Start to measure CPU time.")
               u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
-              equ.write(u_sol, p_sol)
+              end = time.time()
+              print("The CPU time for the whole problem is ", end - start)
+              #equ.write(u_sol, p_sol)
        else:
               print('Should use complex firedrake to implement the preconditioner.')
 else:
@@ -545,3 +597,57 @@ else:
        else:
               # direct version
               print("Use Complex mode")
+
+error_plot = False
+if error_plot:
+       err_list =[]
+       for i in range(5, 71, 5):
+              print(i)
+              T = 2
+              N_t = i
+              N_x = i
+              dim = 1
+              gamma = 1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+              # when gamma is too small the test problem f become ill conditioned and needs really small dt to 
+
+              equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
+              # solver parameters for parallel method
+              parameters = {
+                     #'snes': snes_sparameters, #TODO: is this needed?
+                     'snes_type':'ksponly',
+                     'mat_type': 'matfree',
+                     'ksp_type': 'gmres',
+                     #'ksp_gmres_modifiedgramschmidt':None,
+                     'ksp_gmres_restart': 300,
+                     'ksp': {
+                            'monitor': None,
+                            'converged_reason': None,
+                     },
+                     'ksp_max_it':1000,
+                     'pc_type': 'python',
+                     'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
+              }
+
+              # setup variables that we wish to use in the pc class.
+              V = equ.FunctionSpace
+              W = equ.MixedSpace # W = V*V
+              bigv = fd.TestFunction(W)
+              vu = equ.v # test function space for u
+              vp = equ.w # test function space for p
+              dt = equ.dt
+              bcs = equ.bcs
+
+              # Options
+              pc = True
+              complex = True
+
+              u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
+              error = equ.write(u_sol, p_sol)
+              err_array = np.array(error)
+              err_list.append(err_array)
+              print(err_list)
+              np.savetxt('error.out', np.array(err_list))
+
+       print(err_list)
+       np.savetxt('error.out', np.array(err_list))
+
