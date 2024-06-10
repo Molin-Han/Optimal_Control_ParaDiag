@@ -5,7 +5,7 @@ import numpy as np
 import scipy as sp
 from scipy.fft import fft, ifft
 from firedrake.petsc import PETSc
-from Control_Wave_Direct import Optimal_Control_Wave_Equation
+from Optimal_Control_ParaDiag.Code.Control_Wave_PC import Optimal_Control_Wave_Equation
 
 
 

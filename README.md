@@ -10,6 +10,7 @@ demonstrate the successful implementation of the algorithm using the automated f
 package Firedrake. Moreover, the performance of the preconditioner and the solution accuracy
 are illustrated through a one-dimensional test problem.
 
+The implementation of the whole preconditioner is in the Python file $\texttt{Control\_Wave\_PC.py}$.
 The report will be available upon request via molin.han20@imperial.ac.uk .
 
 [1] .-L. Wu and J. Liu. A parallel-in-time block-circulant preconditioner for optimal control of wave equations. SIAM Journal on Scientific Computing, 42(3):A1510–A1540, 2020.
