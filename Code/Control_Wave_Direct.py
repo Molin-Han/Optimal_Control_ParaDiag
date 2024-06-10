@@ -23,7 +23,7 @@ class Optimal_Control_Wave_Equation:
               self.gamma = fd.Function(self.R).assign(gamma) # Regularising coefficient
               self.dt = T / N_t
               self.dtc = fd.Function(self.R).assign(T/N_t) # firedrake constant for time step
-              self.N = N_t # number of discretisation # FIXME: N is changed
+              self.N = N_t # number of discretisation 
               self.dim = dim # dimension of the problem
               # Setup for the coordinates
               if dim == 1:
@@ -51,7 +51,7 @@ class Optimal_Control_Wave_Equation:
               self.func = fd.Function(self.CG1)
               f_exp = []
               if self.dim == 1:
-                     for i in range(self.N): #TODO: I did a extra dt**2 here! modified
+                     for i in range(self.N):
                             f_exp.append(- 1 / self.gamma * fd.sin(fd.pi * self.x) * (fd.exp(i*self.dtc) - fd.exp(fd.Function(self.R).assign(self.T)))**2)
               if pc:
                      self.f.interpolate(fd.as_vector(f_exp) * fd.sqrt(self.gamma)) # scale factor root gamma
@@ -90,7 +90,7 @@ class Optimal_Control_Wave_Equation:
                      pn = self.p[i]
                      fn = self.f[i]
                      gn = self.g[i]
-                     if i == 1: #TODO: i=0 case is separated
+                     if i == 1: # i=0 case is separated
                             unm1 = self.u[0]
                             unm2 = self.u_0
                      elif i == 0:
@@ -99,7 +99,7 @@ class Optimal_Control_Wave_Equation:
                      else:
                             unm1 = self.u[i-1]
                             unm2 = self.u[i-2]
-                     if i == self.N - 2: #TODO: i = N-1 case is separated
+                     if i == self.N - 2: # i = N-1 case is separated
                             pnp2 = fd.Constant(0)
                             pnp1 = self.p[self.N - 1]
                      elif i == self.N - 1:
@@ -191,7 +191,7 @@ class Optimal_Control_Wave_Equation:
                      self.Build_Initial_Condition()
                      self.Build_L()
 
-                     prob_up = fd.NonlinearVariationalProblem(self.L, self.U, bcs=self.bcs) # TODO: delete RHS
+                     prob_up = fd.NonlinearVariationalProblem(self.L, self.U, bcs=self.bcs)
                      solv_up = fd.NonlinearVariationalSolver(prob_up, solver_parameters=params)
                      solver_setted = time.time()
                      solv_up.solve()
@@ -199,6 +199,8 @@ class Optimal_Control_Wave_Equation:
                      print("The CPU time for solving the problem", solver_solved - solver_setted)
                      u_sol, p_sol = self.U.subfunctions
 
+
+                     # simple test to see if we are solving the equation correctly.
                      v = fd.TestFunction(self.CG1)
                      w = fd.TestFunction(self.CG1)
                      dt = self.dtc
@@ -214,8 +216,6 @@ class Optimal_Control_Wave_Equation:
                      u0 -= fd.inner(self.u_0 + dt * self.u_1 + dt**2/2 * f[0], v) * fd.dx
                      #print("~~~~~~~~~~~~~~~~~~~~~~", fd.norm(fd.assemble(u0, bcs=bcs).riesz_representation()))
                      
-
-
                      k = 2
                      un = u_sol[k]
                      unm1 = u_sol[k-1]
@@ -237,8 +237,8 @@ class Optimal_Control_Wave_Equation:
                      Lp += fd.inner(dt**2 * grad((pn+pnp2)/2), grad(w)) * fd.dx
                      Lp -= fd.inner(dt**2 * gn, w) * fd.dx
 
-                     #print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lu, bcs=bcs).riesz_representation()))
-                     #print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()))
+                     # print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lu, bcs=bcs).riesz_representation()))
+                     # print("!!!!!!!!!!!!!!!!!!!!!!!!", fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()))
                      # if fd.norm(fd.assemble(Lp, bcs=bcs).riesz_representation()) > 1e-6:
                      #        raise ValueError("The equation is not solved properly")
               return u_sol, p_sol
@@ -265,6 +265,7 @@ class Optimal_Control_Wave_Equation:
               error = []
               #print(u_sol.dat.data.shape)
               #print('!!!',fd.norm(u_sol - self.g)) # if gamma is small, that should tend to 0
+              # For solution plotting
               x_list = [5,10,15,20,25]
               xi = x_list[4]
               x_sol = []
@@ -278,18 +279,16 @@ class Optimal_Control_Wave_Equation:
                      if i == 0:
                             p_out.interpolate(fd.Constant(0))
                             u_out.interpolate(self.u_0/sc)
-                            #print(u_out.dat.data)
                             g_out.interpolate(fd.Constant(0))
                      elif i == 1:
                             p_out.interpolate(p_sol[0])
-                            u_out.interpolate((fd.cos(self.T/self.N*fd.pi)*self.u_0+self.dtc*self.u_1)/sc) #TODO: problem here!!!!!
+                            u_out.interpolate((fd.cos(self.T/self.N*fd.pi)*self.u_0+self.dtc*self.u_1)/sc)
                             g_out.interpolate(fd.Constant(0))
                      elif i >= self.N:
                             p_out.interpolate(fd.Constant(0))
                             u_out.interpolate(u_sol[i-2]/sc)
                             g_out.interpolate(self.g[i-2])
                      else:
-                            #print(i)
                             u_out.interpolate(u_sol[i-2]/sc)
                             p_out.interpolate(p_sol[i-1])
                             g_out.interpolate(self.g[i-2])
@@ -299,20 +298,10 @@ class Optimal_Control_Wave_Equation:
                      elif self.dim == 1:
                             u_ana.interpolate(fd.sin(fd.pi*self.x)*fd.cos(fd.pi*i*self.dtc))
                             p_ana.interpolate(fd.sin(fd.pi*self.x)*(fd.exp(i*self.dtc)-fd.exp(self.T))**2)
-                     #print(fd.norm(u_out-g_out))
-                     #print(i)
-                     # TODO: test for f = 0
-                     if i < self.N-1:
-                            pass
-                            #print("error for f=0", fd.norm(p_out - self.gamma * fd.Function(self.CG1).interpolate(self.f_exp[i]) + p_ana)/fd.norm(p_out))
-                     # TODO: test for relative error for true problem.
-                     #print("Relative Error in u,p is", [fd.norm(u_out-u_ana) / fd.norm(u_ana), fd.norm(p_out-p_ana) / fd.norm(p_ana)])
-                     if i < self.N - 1:
-                            pass
-                            # print(fd.cos(fd.pi * i *self.dtc))
-                            #print('scaling', fd.interpolate(u_sol[i],self.CG1).dat.data[int(self.N_x/2)] / u_ana.dat.data[int(self.N_x/2)])
-                            #print('ana_mid', u_ana.dat.data[int(self.N_x/2)])
-                            #print('sol_mid', fd.interpolate(u_sol[i],self.CG1).dat.data[int(self.N_x/2)])
+                     
+                     # test for relative error for true problem.
+                     # print("Relative Error in u,p is", [fd.norm(u_out-u_ana) / fd.norm(u_ana), fd.norm(p_out-p_ana) / fd.norm(p_ana)])
+                     # Solution plots
                      x_val = u_out.dat.data[xi]
                      x_val_ana = u_ana.dat.data[xi]
                      x_sol.append(x_val)
@@ -333,25 +322,21 @@ class Optimal_Control_Wave_Equation:
                      sol_file.write(u_out, p_out, g_out)
                      ana_file.write(u_ana, p_ana)
                      err = u_out.dat.data - u_ana.dat.data
-                     #print(err)
-                     #print(np.linalg.norm(err))
                      if i>1:
                             error.append(np.linalg.norm(err))
-                     #print("!!!!!!!",len(error))
-              # print(error)
-              # print('the error is', np.linalg.norm(error, ord=-np.inf))
+              
               if plot:
                      np.savetxt(f'x_sol_{xi}', np.real(np.array(x_sol)))
                      np.savetxt(f'x_ana_{xi}', np.real(np.array(x_ana)))
                      np.savetxt(f'xp_sol_{xi}', np.real(np.array(xp_sol)))
                      np.savetxt(f'xp_ana_{xi}', np.real(np.array(xp_ana)))
-              return np.linalg.norm(error, ord=-np.inf)
+              return np.linalg.norm(error, ord=np.inf)
 # the control test problem
 T = 2
 N_t = 81
 N_x = 80
 dim = 1
-gamma = 1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
+gamma = 1 # regulariser parameter
 # when gamma is too small the test problem f become ill conditioned and needs really small dt to 
 
 
@@ -360,11 +345,9 @@ equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
 
 # solver parameters for parallel method
 parameters = {
-       #'snes': snes_sparameters, #TODO: is this needed?
        'snes_type':'ksponly',
        'mat_type': 'matfree',
        'ksp_type': 'gmres',
-       #'ksp_gmres_modifiedgramschmidt':None,
        'ksp_gmres_restart': 300,
        'ksp': {
               'monitor': None,
@@ -372,7 +355,7 @@ parameters = {
        },
        'ksp_max_it':1000,
        'pc_type': 'python',
-       'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
+       'pc_python_type': '__main__.DiagFFTPC',
 }
 
 # setup variables that we wish to use in the pc class.
@@ -394,20 +377,20 @@ class DiagFFTPC(fd.PCBase):
 
 
 
-       def initialize(self, pc): #FIXME: N_t variables now.
-              self.xf = fd.Cofunction(W.dual()) # copy the code back.
+       def initialize(self, pc): #  N_t variables now.
+              self.xf = fd.Cofunction(W.dual())
               self.yf = fd.Function(W)
               self.w = fd.Function(W)
               self.f = fd.Function(W)
 
-              # eigenvalues for Gamma 1&2 #TODO: should it be N_t-1?
+              # eigenvalues for Gamma 1&2
               self.Lambda_1 = 1 - 2 * np.exp(2j*np.pi/ N_t * np.arange(N_t)) + np.exp(4j*np.pi/(N_t) * np.arange(N_t))
               self.Lambda_2 = 1 + np.exp(4j*np.pi/N_t * np.arange(N_t))
 
               # Colin's checks ========================
               # checking 
               
-              #self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2) #TODO: need to check this in ipython CHECKED
+              #self.S1 = np.sqrt(-np.conj(self.Lambda_2) / self.Lambda_2)
               #self.S2 = -self.S1.conj() # -np.sqrt(-self.Lambda_2 / np.conj(self.Lambda_2))
 
               m1 = self.Lambda_1/self.Lambda_2
@@ -490,7 +473,7 @@ class DiagFFTPC(fd.PCBase):
                      D += fd.inner(dt**2/2 * fd.grad(tp[i]),fd.grad(vp[i])) * fd.dx
 
 
-              # Simple solver for the test of the rest
+              # Simple solver for the test of the implementation of PC
               A = fd.inner(tu, vu) * fd.dx + fd.inner(tp, vp) * fd.dx
               B = fd.inner(fu, vu) * fd.dx + fd.inner(fp, vp) * fd.dx
 
@@ -501,7 +484,7 @@ class DiagFFTPC(fd.PCBase):
               self.solv_w = fd.LinearVariationalSolver(prob_w, solver_parameters=params_linear)
 
 
-       def update(self, pc): # TODO: we don't need this?
+       def update(self, pc):
               pass
 
 
@@ -510,8 +493,6 @@ class DiagFFTPC(fd.PCBase):
               with self.xf.dat.vec_wo as v: # vector write only mode to ensure communication.
                      x.copy(v)
 
-              #TODO: Why is it self.xf here? where is x
-              #x_array = self.xf.dat.data # 2*N_x * N_t tensor
               u_array = self.xf.dat[0].data[:] # N_x * N_t array
               p_array = self.xf.dat[1].data[:]
               
@@ -547,7 +528,7 @@ class DiagFFTPC(fd.PCBase):
               uy.interpolate(fd.as_vector(ufin))
               py.interpolate(fd.as_vector(pfin))
 
-              # apply lambda_2^-1 to the ffted vector #TODO: seems not to be consistent with the paper
+              # apply lambda_2^-1 to the ffted vector
               uf, pf = fd.split(self.yf)
               uy, py = self.yf.subfunctions
               ufin = []
@@ -586,7 +567,7 @@ if pc:
               u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
               end = time.time()
               print("The CPU time for the whole problem is ", end - start)
-              #equ.write(u_sol, p_sol)
+              equ.write(u_sol, p_sol)
        else:
               print('Should use complex firedrake to implement the preconditioner.')
 else:
@@ -598,26 +579,24 @@ else:
               # direct version
               print("Use Complex mode")
 
+# Plot for convergence test.
 error_plot = False
 if error_plot:
-       err_list =[]
+       err_list = []
        for i in range(5, 71, 5):
               print(i)
               T = 2
               N_t = i
               N_x = i
               dim = 1
-              gamma = 1 # regulariser parameter #TODO: in the end, consider gamma -> 0 limit.
-              # when gamma is too small the test problem f become ill conditioned and needs really small dt to 
+              gamma = 1
 
               equ = Optimal_Control_Wave_Equation(N_x, T, N_t, gamma, dim=dim)
               # solver parameters for parallel method
               parameters = {
-                     #'snes': snes_sparameters, #TODO: is this needed?
                      'snes_type':'ksponly',
                      'mat_type': 'matfree',
                      'ksp_type': 'gmres',
-                     #'ksp_gmres_modifiedgramschmidt':None,
                      'ksp_gmres_restart': 300,
                      'ksp': {
                             'monitor': None,
@@ -625,7 +604,7 @@ if error_plot:
                      },
                      'ksp_max_it':1000,
                      'pc_type': 'python',
-                     'pc_python_type': '__main__.DiagFFTPC', #TODO: needs to be put after the pc class.? not necessarily
+                     'pc_python_type': '__main__.DiagFFTPC',
               }
 
               # setup variables that we wish to use in the pc class.
@@ -641,13 +620,13 @@ if error_plot:
               pc = True
               complex = True
 
-              u_sol, p_sol = equ.solve(parameters=parameters, complex=True) #TODO: Build complex
+              u_sol, p_sol = equ.solve(parameters=parameters, complex=True)
               error = equ.write(u_sol, p_sol)
               err_array = np.array(error)
               err_list.append(err_array)
-              print(err_list)
+              # print(err_list)
               np.savetxt('error.out', np.array(err_list))
 
-       print(err_list)
+       # print(err_list)
        np.savetxt('error.out', np.array(err_list))
 
