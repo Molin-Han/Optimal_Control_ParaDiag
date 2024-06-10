@@ -13,3 +13,4 @@ are illustrated through a one-dimensional test problem.
 The report will be available upon request via molin.han20@imperial.ac.uk .
 
 [1] .-L. Wu and J. Liu. A parallel-in-time block-circulant preconditioner for optimal control of wave equations. SIAM Journal on Scientific Computing, 42(3):A1510–A1540, 2020.
+[2] . J. Gander, J. Liu, S.-L. Wu, X. Yue, and T. Zhou. ParaDiag: parallel-in-time algorithms based on the diagonalization technique, 2021.
